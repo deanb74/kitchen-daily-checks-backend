@@ -4,3 +4,7 @@ node_modules
 prisma/dev.db
 prisma/dev.db-journal
 .DS_Store
+git init
+git add .
+git commit -m "Initial backend"
+
