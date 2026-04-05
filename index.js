@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
 
 const app = express();
@@ -9,8 +10,8 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 3001;
-const SECRET = "supersecret";
+const PORT = process.env.PORT || 3001;
+const SECRET = process.env.JWT_SECRET || "supersecret";
 
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -49,10 +50,12 @@ app.post("/register", async (req, res) => {
     return res.status(400).json({ error: "User already exists" });
   }
 
+  const hashedPassword = await bcrypt.hash(password, 10);
+
   const user = await prisma.user.create({
     data: {
       email,
-      password,
+      password: hashedPassword,
     },
   });
 
@@ -71,7 +74,13 @@ app.post("/login", async (req, res) => {
     where: { email },
   });
 
-  if (!user || user.password !== password) {
+  if (!user) {
+    return res.status(401).json({ error: "Invalid login" });
+  }
+
+  const validPassword = await bcrypt.compare(password, user.password);
+
+  if (!validPassword) {
     return res.status(401).json({ error: "Invalid login" });
   }
 
