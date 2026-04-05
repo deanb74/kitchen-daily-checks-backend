@@ -1,8 +1,8 @@
-import express from "express";
-import cors from "cors";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import cors from "cors";
+import express from "express";
+import jwt from "jsonwebtoken";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -50,7 +50,7 @@ app.post("/register", async (req, res) => {
     return res.status(400).json({ error: "User already exists" });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = bcrypt.hashSync(password, 10);
 
   const user = await prisma.user.create({
     data: {
@@ -78,7 +78,7 @@ app.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid login" });
   }
 
-  const validPassword = await bcrypt.compare(password, user.password);
+  const validPassword = bcrypt.compareSync(password, user.password);
 
   if (!validPassword) {
     return res.status(401).json({ error: "Invalid login" });
