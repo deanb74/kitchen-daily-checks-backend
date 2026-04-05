@@ -10,6 +10,10 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
+app.get("/health", (_req, res) => {
+  res.status(200).send("ok");
+});
+
 const PORT = process.env.PORT || 3001;
 const SECRET = process.env.JWT_SECRET || "supersecret";
 
@@ -144,6 +148,8 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (err) => {
   console.error("UNHANDLED REJECTION:", err);
 });
-app.listen(PORT, () => {
-  console.log(`🚀 API running on http://localhost:${PORT}`);
+const HOST = "0.0.0.0";
+
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 API running on http://${HOST}:${PORT}`);
 });
