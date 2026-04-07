@@ -16,7 +16,6 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (_req, res) => {
-  console.log("HIT /health");
   res.status(200).send("ok");
 });
 
@@ -39,6 +38,18 @@ function requireAuth(req, res, next) {
   } catch {
     return res.status(401).json({ error: "Invalid token" });
   }
+}
+
+async function requireManager(req, res, next) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.userId },
+  });
+
+  if (!user || user.role !== "manager") {
+    return res.status(403).json({ error: "Manager access required" });
+  }
+
+  next();
 }
 
 app.get("/", (req, res) => {
@@ -74,7 +85,7 @@ app.post("/register", async (req, res) => {
 
     return res.json({
       token,
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, role: user.role },
     });
   } catch (error) {
     console.error("REGISTER ERROR:", error);
@@ -104,7 +115,7 @@ app.post("/login", async (req, res) => {
 
     return res.json({
       token,
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, role: user.role },
     });
   } catch (error) {
     console.error("LOGIN ERROR:", error);
@@ -172,6 +183,36 @@ app.post("/temperatures", requireAuth, async (req, res) => {
   });
 
   res.json(entry);
+});
+
+app.get("/manager/users", requireAuth, requireManager, async (_req, res) => {
+  const users = await prisma.user.findMany({
+    select: {
+      id: true,
+      email: true,
+      role: true,
+    },
+    orderBy: { id: "asc" },
+  });
+
+  res.json(users);
+});
+
+app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
+  const { name, assignedUserId } = req.body;
+
+  if (!name || !assignedUserId) {
+    return res.status(400).json({ error: "name and assignedUserId are required" });
+  }
+
+  const task = await prisma.task.create({
+    data: {
+      name,
+      assignedUserId: Number(assignedUserId),
+    },
+  });
+
+  res.json(task);
 });
 
 process.on("uncaughtException", (err) => {
