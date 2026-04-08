@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   console.log("REQ", req.method, req.url);
   next();
 });
@@ -52,7 +52,7 @@ async function requireManager(req, res, next) {
   next();
 }
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.send("Kitchen Daily Checks API is running");
 });
 
@@ -151,7 +151,10 @@ app.post("/tasks/:id/complete", requireAuth, async (req, res) => {
 
     const task = await prisma.task.update({
       where: { id },
-      data: { completed: true },
+      data: {
+        completed: true,
+        completedAt: new Date(),
+      },
     });
 
     res.json(task);
@@ -161,7 +164,7 @@ app.post("/tasks/:id/complete", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/temperatures", requireAuth, async (req, res) => {
+app.get("/temperatures", requireAuth, async (_req, res) => {
   const logs = await prisma.temperatureLog.findMany({
     orderBy: { createdAt: "desc" },
   });
@@ -213,6 +216,17 @@ app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
   });
 
   res.json(task);
+});
+
+app.post("/manager/tasks/reset", requireAuth, requireManager, async (_req, res) => {
+  await prisma.task.updateMany({
+    data: {
+      completed: false,
+      completedAt: null,
+    },
+  });
+
+  res.json({ success: true });
 });
 
 process.on("uncaughtException", (err) => {

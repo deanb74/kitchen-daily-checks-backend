@@ -16,11 +16,12 @@ model User {
 }
 
 model Task {
-  id             Int      @id @default(autoincrement())
+  id             Int       @id @default(autoincrement())
   name           String
-  completed      Boolean  @default(false)
+  completed      Boolean   @default(false)
+  completedAt    DateTime?
   assignedUserId Int?
-  assignedUser   User?    @relation(fields: [assignedUserId], references: [id])
+  assignedUser   User?     @relation(fields: [assignedUserId], references: [id])
 }
 
 model TemperatureLog {
