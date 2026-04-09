@@ -28,5 +28,7 @@ model TemperatureLog {
   id        Int      @id @default(autoincrement())
   fridge    String
   value     Float
+  type      String   // "fridge" or "freezer"
+  status    String   // "green", "amber", "red"
   createdAt DateTime @default(now())
 }

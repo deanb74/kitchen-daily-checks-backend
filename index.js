@@ -172,16 +172,33 @@ app.get("/temperatures", requireAuth, async (_req, res) => {
 });
 
 app.post("/temperatures", requireAuth, async (req, res) => {
-  const { fridge, value } = req.body;
+  const { fridge, value, type } = req.body;
 
-  if (!fridge || value === undefined || value === "") {
-    return res.status(400).json({ error: "fridge and value are required" });
+  if (!fridge || value === undefined || !type) {
+    return res.status(400).json({ error: "fridge, value and type are required" });
+  }
+
+  const temp = Number(value);
+  let status = "green";
+
+  if (type === "fridge") {
+    if (temp < 0 || temp > 8) status = "red";
+    else if (temp < 2 || temp > 5) status = "amber";
+    else status = "green";
+  }
+
+  if (type === "freezer") {
+    if (temp > -18) status = "red";
+    else if (temp < -21) status = "amber";
+    else status = "green";
   }
 
   const entry = await prisma.temperatureLog.create({
     data: {
       fridge,
-      value: Number(value),
+      value: temp,
+      type,
+      status,
     },
   });
 
