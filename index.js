@@ -218,6 +218,19 @@ app.get("/manager/users", requireAuth, requireManager, async (_req, res) => {
   res.json(users);
 });
 
+app.get("/manager/alerts", requireAuth, requireManager, async (_req, res) => {
+  const alerts = await prisma.temperatureLog.findMany({
+    where: {
+      status: {
+        not: "green",
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json(alerts);
+});
+
 app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
   const { name, assignedUserId } = req.body;
 
