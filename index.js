@@ -232,6 +232,20 @@ app.get("/manager/alerts", requireAuth, requireManager, async (_req, res) => {
   res.json(alerts);
 });
 
+app.get("/manager/alerts/history", requireAuth, requireManager, async (_req, res) => {
+  const alerts = await prisma.temperatureLog.findMany({
+    where: {
+      status: {
+        not: "green",
+      },
+      acknowledged: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json(alerts);
+});
+
 app.post("/manager/alerts/:id/acknowledge", requireAuth, requireManager, async (req, res) => {
   const id = Number(req.params.id);
 
