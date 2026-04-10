@@ -224,11 +224,30 @@ app.get("/manager/alerts", requireAuth, requireManager, async (_req, res) => {
       status: {
         not: "green",
       },
+      acknowledged: false,
     },
     orderBy: { createdAt: "desc" },
   });
 
   res.json(alerts);
+});
+
+app.post("/manager/alerts/:id/acknowledge", requireAuth, requireManager, async (req, res) => {
+  const id = Number(req.params.id);
+
+  try {
+    const alert = await prisma.temperatureLog.update({
+      where: { id },
+      data: {
+        acknowledged: true,
+      },
+    });
+
+    res.json(alert);
+  } catch (error) {
+    console.error("ACKNOWLEDGE ALERT ERROR:", error);
+    res.status(404).json({ error: "Alert not found" });
+  }
 });
 
 app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {

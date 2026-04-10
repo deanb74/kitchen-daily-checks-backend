@@ -25,10 +25,11 @@ model Task {
 }
 
 model TemperatureLog {
-  id        Int      @id @default(autoincrement())
-  fridge    String
-  value     Float
-  type      String   @default("fridge")
-  status    String   @default("green")
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  fridge       String
+  value        Float
+  type         String   @default("fridge")
+  status       String   @default("green")
+  acknowledged Boolean  @default(false)
+  createdAt    DateTime @default(now())
 }
