@@ -52,6 +52,25 @@ async function requireManager(req, res, next) {
   next();
 }
 
+async function sendExpoPushNotifications(messages) {
+  try {
+    const response = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(messages),
+    });
+
+    const data = await response.json();
+    console.log("EXPO PUSH RESPONSE:", data);
+  } catch (error) {
+    console.error("PUSH SEND ERROR:", error);
+  }
+}
+
 app.get("/", (_req, res) => {
   res.send("Kitchen Daily Checks API is running");
 });
@@ -120,6 +139,31 @@ app.post("/login", async (req, res) => {
   } catch (error) {
     console.error("LOGIN ERROR:", error);
     return res.status(500).json({ error: "Login failed" });
+  }
+});
+
+app.post("/push-token", requireAuth, async (req, res) => {
+  try {
+    const { pushToken } = req.body;
+
+    if (!pushToken) {
+      return res.status(400).json({ error: "pushToken is required" });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { pushToken },
+      select: {
+        id: true,
+        email: true,
+        pushToken: true,
+      },
+    });
+
+    res.json(user);
+  } catch (error) {
+    console.error("PUSH TOKEN ERROR:", error);
+    res.status(500).json({ error: "Could not save push token" });
   }
 });
 
@@ -201,6 +245,38 @@ app.post("/temperatures", requireAuth, async (req, res) => {
       status,
     },
   });
+
+  if (status === "red") {
+    const managers = await prisma.user.findMany({
+      where: {
+        role: "manager",
+        pushToken: { not: null },
+      },
+      select: {
+        pushToken: true,
+      },
+    });
+
+    const messages = managers
+      .filter((m) => m.pushToken)
+      .map((m) => ({
+        to: m.pushToken,
+        sound: "default",
+        title: "Red temperature alert",
+        body: `${fridge} (${type}) logged ${temp}°C`,
+        data: {
+          screen: "manager",
+          fridge,
+          type,
+          value: temp,
+          status,
+        },
+      }));
+
+    if (messages.length > 0) {
+      await sendExpoPushNotifications(messages);
+    }
+  }
 
   res.json(entry);
 });
