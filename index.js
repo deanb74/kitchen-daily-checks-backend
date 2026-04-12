@@ -322,6 +322,36 @@ app.get("/manager/alerts/history", requireAuth, requireManager, async (_req, res
   res.json(alerts);
 });
 
+app.get("/manager/reports/temperatures", requireAuth, requireManager, async (_req, res) => {
+  const logs = await prisma.temperatureLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  res.json(logs);
+});
+
+app.get("/manager/reports/tasks", requireAuth, requireManager, async (_req, res) => {
+  const tasks = await prisma.task.findMany({
+    where: {
+      completedAt: {
+        not: null,
+      },
+    },
+    include: {
+      assignedUser: {
+        select: {
+          email: true,
+        },
+      },
+    },
+    orderBy: { completedAt: "desc" },
+    take: 50,
+  });
+
+  res.json(tasks);
+});
+
 app.post("/manager/alerts/:id/acknowledge", requireAuth, requireManager, async (req, res) => {
   const id = Number(req.params.id);
 
