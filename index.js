@@ -355,11 +355,67 @@ app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
       email: true,
       role: true,
       siteId: true,
+      site: {
+        select: {
+          name: true,
+        },
+      },
     },
     orderBy: { id: "asc" },
   });
 
   res.json(users);
+});
+
+app.get("/manager/sites", requireAuth, requireManager, async (_req, res) => {
+  const sites = await prisma.site.findMany({
+    orderBy: { id: "asc" },
+  });
+
+  res.json(sites);
+});
+
+app.post("/manager/sites", requireAuth, requireManager, async (req, res) => {
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: "Site name is required" });
+  }
+
+  try {
+    const site = await prisma.site.create({
+      data: { name },
+    });
+
+    res.json(site);
+  } catch (error) {
+    console.error("CREATE SITE ERROR:", error);
+    res.status(400).json({ error: "Could not create site" });
+  }
+});
+
+app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res) => {
+  const userId = Number(req.params.id);
+  const { siteId } = req.body;
+
+  if (!siteId) {
+    return res.status(400).json({ error: "siteId is required" });
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { siteId: Number(siteId) },
+      include: {
+        site: true,
+      },
+    });
+
+    res.json(user);
+  } catch (error) {
+    console.error("ASSIGN USER SITE ERROR:", error);
+    res.status(400).json({ error: "Could not assign user to site" });
+  }
 });
 
 app.get("/manager/alerts", requireAuth, requireManager, async (req, res) => {
