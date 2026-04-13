@@ -418,6 +418,30 @@ app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res
   }
 });
 
+app.post("/manager/users/:id/role", requireAuth, requireManager, async (req, res) => {
+  const userId = Number(req.params.id);
+  const { role } = req.body;
+
+  if (!role || !["staff", "manager"].includes(role)) {
+    return res.status(400).json({ error: "Valid role is required" });
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { role },
+      include: {
+        site: true,
+      },
+    });
+
+    res.json(user);
+  } catch (error) {
+    console.error("UPDATE USER ROLE ERROR:", error);
+    res.status(400).json({ error: "Could not update user role" });
+  }
+});
+
 app.get("/manager/alerts", requireAuth, requireManager, async (req, res) => {
   const alerts = await prisma.temperatureLog.findMany({
     where: {
