@@ -7,12 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Site {
+  id              Int              @id @default(autoincrement())
+  name            String           @unique
+  users           User[]
+  tasks           Task[]
+  temperatureLogs TemperatureLog[]
+}
+
 model User {
   id        Int     @id @default(autoincrement())
   email     String  @unique
   password  String
   role      String  @default("staff")
   pushToken String?
+  siteId    Int?
+  site      Site?   @relation(fields: [siteId], references: [id])
   tasks     Task[]
 }
 
@@ -23,6 +33,8 @@ model Task {
   completedAt    DateTime?
   assignedUserId Int?
   assignedUser   User?     @relation(fields: [assignedUserId], references: [id])
+  siteId         Int?
+  site           Site?     @relation(fields: [siteId], references: [id])
 }
 
 model TemperatureLog {
@@ -32,5 +44,7 @@ model TemperatureLog {
   type         String   @default("fridge")
   status       String   @default("green")
   acknowledged Boolean  @default(false)
+  siteId       Int?
+  site         Site?    @relation(fields: [siteId], references: [id])
   createdAt    DateTime @default(now())
 }

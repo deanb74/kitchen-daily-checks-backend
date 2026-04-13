@@ -49,6 +49,20 @@ async function requireManager(req, res, next) {
     return res.status(403).json({ error: "Manager access required" });
   }
 
+  req.currentUser = user;
+  next();
+}
+
+async function attachCurrentUser(req, res, next) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.userId },
+  });
+
+  if (!user) {
+    return res.status(401).json({ error: "User not found" });
+  }
+
+  req.currentUser = user;
   next();
 }
 
@@ -117,10 +131,18 @@ app.post("/register", async (req, res) => {
 
     const hashedPassword = bcrypt.hashSync(password, 10);
 
+    const site = await prisma.site.findFirst({
+      orderBy: { id: "asc" },
+    });
+
     const user = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
+        siteId: site?.id ?? null,
+      },
+      include: {
+        site: true,
       },
     });
 
@@ -128,7 +150,13 @@ app.post("/register", async (req, res) => {
 
     return res.json({
       token,
-      user: { id: user.id, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        siteId: user.siteId,
+        siteName: user.site?.name || null,
+      },
     });
   } catch (error) {
     console.error("REGISTER ERROR:", error);
@@ -142,6 +170,7 @@ app.post("/login", async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { email },
+      include: { site: true },
     });
 
     if (!user || !user.password) {
@@ -158,7 +187,13 @@ app.post("/login", async (req, res) => {
 
     return res.json({
       token,
-      user: { id: user.id, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        siteId: user.siteId,
+        siteName: user.site?.name || null,
+      },
     });
   } catch (error) {
     console.error("LOGIN ERROR:", error);
@@ -166,7 +201,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-app.post("/push-token", requireAuth, async (req, res) => {
+app.post("/push-token", requireAuth, attachCurrentUser, async (req, res) => {
   try {
     const { pushToken } = req.body;
 
@@ -175,7 +210,7 @@ app.post("/push-token", requireAuth, async (req, res) => {
     }
 
     const user = await prisma.user.update({
-      where: { id: req.user.userId },
+      where: { id: req.currentUser.id },
       data: { pushToken },
       select: {
         id: true,
@@ -191,10 +226,11 @@ app.post("/push-token", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/tasks", requireAuth, async (req, res) => {
+app.get("/tasks", requireAuth, attachCurrentUser, async (req, res) => {
   const tasks = await prisma.task.findMany({
     where: {
-      assignedUserId: req.user.userId,
+      assignedUserId: req.currentUser.id,
+      siteId: req.currentUser.siteId,
     },
     orderBy: { id: "asc" },
   });
@@ -202,14 +238,15 @@ app.get("/tasks", requireAuth, async (req, res) => {
   res.json(tasks);
 });
 
-app.post("/tasks/:id/complete", requireAuth, async (req, res) => {
+app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res) => {
   const id = Number(req.params.id);
 
   try {
     const existingTask = await prisma.task.findFirst({
       where: {
         id,
-        assignedUserId: req.user.userId,
+        assignedUserId: req.currentUser.id,
+        siteId: req.currentUser.siteId,
       },
     });
 
@@ -232,86 +269,17 @@ app.post("/tasks/:id/complete", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/temperatures", requireAuth, async (_req, res) => {
+app.get("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
   const logs = await prisma.temperatureLog.findMany({
+    where: {
+      siteId: req.currentUser.siteId,
+    },
     orderBy: { createdAt: "desc" },
   });
   res.json(logs);
 });
 
-async function sendExpoPushNotifications(messages) {
-  try {
-    const response = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(messages),
-    });
-
-    const data = await response.json();
-    console.log("EXPO PUSH RESPONSE:", data);
-  } catch (error) {
-    console.error("PUSH SEND ERROR:", error);
-  }
-}
-
-app.post("/push-token", requireAuth, async (req, res) => {
-  try {
-    const { pushToken } = req.body;
-
-    if (!pushToken) {
-      return res.status(400).json({ error: "pushToken is required" });
-    }
-
-    const user = await prisma.user.update({
-      where: { id: req.user.userId },
-      data: { pushToken },
-      select: { id: true, email: true, pushToken: true },
-    });
-
-    res.json(user);
-  } catch (error) {
-    console.error("PUSH TOKEN ERROR:", error);
-    res.status(500).json({ error: "Could not save push token" });
-  }
-});
-
-if (status === "red") {
-  const managers = await prisma.user.findMany({
-    where: {
-      role: "manager",
-      pushToken: { not: null },
-    },
-    select: {
-      pushToken: true,
-    },
-  });
-
-  const messages = managers
-    .filter((m) => m.pushToken)
-    .map((m) => ({
-      to: m.pushToken,
-      sound: "default",
-      title: "Red temperature alert",
-      body: `${fridge} (${type}) logged ${temp}°C`,
-      data: {
-        screen: "manager",
-        fridge,
-        type,
-        value: temp,
-        status,
-      },
-    }));
-
-  if (messages.length > 0) {
-    await sendExpoPushNotifications(messages);
-  }
-}
-
-app.post("/temperatures", requireAuth, async (req, res) => {
+app.post("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
   const { fridge, value, type } = req.body;
 
   if (!fridge || value === undefined || !type) {
@@ -324,13 +292,11 @@ app.post("/temperatures", requireAuth, async (req, res) => {
   if (type === "fridge") {
     if (temp < 0 || temp > 8) status = "red";
     else if (temp < 2 || temp > 5) status = "amber";
-    else status = "green";
   }
 
   if (type === "freezer") {
     if (temp > -18) status = "red";
     else if (temp < -21) status = "amber";
-    else status = "green";
   }
 
   const entry = await prisma.temperatureLog.create({
@@ -339,6 +305,7 @@ app.post("/temperatures", requireAuth, async (req, res) => {
       value: temp,
       type,
       status,
+      siteId: req.currentUser.siteId,
     },
   });
 
@@ -346,6 +313,7 @@ app.post("/temperatures", requireAuth, async (req, res) => {
     const managers = await prisma.user.findMany({
       where: {
         role: "manager",
+        siteId: req.currentUser.siteId,
         pushToken: { not: null },
       },
       select: {
@@ -377,12 +345,16 @@ app.post("/temperatures", requireAuth, async (req, res) => {
   res.json(entry);
 });
 
-app.get("/manager/users", requireAuth, requireManager, async (_req, res) => {
+app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
   const users = await prisma.user.findMany({
+    where: {
+      siteId: req.currentUser.siteId,
+    },
     select: {
       id: true,
       email: true,
       role: true,
+      siteId: true,
     },
     orderBy: { id: "asc" },
   });
@@ -390,9 +362,10 @@ app.get("/manager/users", requireAuth, requireManager, async (_req, res) => {
   res.json(users);
 });
 
-app.get("/manager/alerts", requireAuth, requireManager, async (_req, res) => {
+app.get("/manager/alerts", requireAuth, requireManager, async (req, res) => {
   const alerts = await prisma.temperatureLog.findMany({
     where: {
+      siteId: req.currentUser.siteId,
       status: {
         not: "green",
       },
@@ -404,9 +377,10 @@ app.get("/manager/alerts", requireAuth, requireManager, async (_req, res) => {
   res.json(alerts);
 });
 
-app.get("/manager/alerts/history", requireAuth, requireManager, async (_req, res) => {
+app.get("/manager/alerts/history", requireAuth, requireManager, async (req, res) => {
   const alerts = await prisma.temperatureLog.findMany({
     where: {
+      siteId: req.currentUser.siteId,
       status: {
         not: "green",
       },
@@ -423,7 +397,10 @@ app.get("/manager/reports/temperatures", requireAuth, requireManager, async (req
   const createdAt = getDateFilter(range);
 
   const logs = await prisma.temperatureLog.findMany({
-    where: createdAt ? { createdAt } : undefined,
+    where: {
+      siteId: req.currentUser.siteId,
+      ...(createdAt ? { createdAt } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
@@ -437,6 +414,7 @@ app.get("/manager/reports/tasks", requireAuth, requireManager, async (req, res) 
 
   const tasks = await prisma.task.findMany({
     where: {
+      siteId: req.currentUser.siteId,
       completedAt: completedAt ? completedAt : { not: null },
     },
     include: {
@@ -457,6 +435,17 @@ app.post("/manager/alerts/:id/acknowledge", requireAuth, requireManager, async (
   const id = Number(req.params.id);
 
   try {
+    const existing = await prisma.temperatureLog.findFirst({
+      where: {
+        id,
+        siteId: req.currentUser.siteId,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Alert not found" });
+    }
+
     const alert = await prisma.temperatureLog.update({
       where: { id },
       data: {
@@ -482,14 +471,18 @@ app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
     data: {
       name,
       assignedUserId: Number(assignedUserId),
+      siteId: req.currentUser.siteId,
     },
   });
 
   res.json(task);
 });
 
-app.post("/manager/tasks/reset", requireAuth, requireManager, async (_req, res) => {
+app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) => {
   await prisma.task.updateMany({
+    where: {
+      siteId: req.currentUser.siteId,
+    },
     data: {
       completed: false,
       completedAt: null,
