@@ -52,6 +52,30 @@ async function requireManager(req, res, next) {
   next();
 }
 
+function getDateFilter(range) {
+  const now = new Date();
+
+  if (range === "today") {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return { gte: start };
+  }
+
+  if (range === "7d") {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 7);
+    return { gte: start };
+  }
+
+  if (range === "30d") {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 30);
+    return { gte: start };
+  }
+
+  return undefined;
+}
+
 async function sendExpoPushNotifications(messages) {
   try {
     const response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -394,21 +418,26 @@ app.get("/manager/alerts/history", requireAuth, requireManager, async (_req, res
   res.json(alerts);
 });
 
-app.get("/manager/reports/temperatures", requireAuth, requireManager, async (_req, res) => {
+app.get("/manager/reports/temperatures", requireAuth, requireManager, async (req, res) => {
+  const range = req.query.range;
+  const createdAt = getDateFilter(range);
+
   const logs = await prisma.temperatureLog.findMany({
+    where: createdAt ? { createdAt } : undefined,
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 100,
   });
 
   res.json(logs);
 });
 
-app.get("/manager/reports/tasks", requireAuth, requireManager, async (_req, res) => {
+app.get("/manager/reports/tasks", requireAuth, requireManager, async (req, res) => {
+  const range = req.query.range;
+  const completedAt = getDateFilter(range);
+
   const tasks = await prisma.task.findMany({
     where: {
-      completedAt: {
-        not: null,
-      },
+      completedAt: completedAt ? completedAt : { not: null },
     },
     include: {
       assignedUser: {
@@ -418,7 +447,7 @@ app.get("/manager/reports/tasks", requireAuth, requireManager, async (_req, res)
       },
     },
     orderBy: { completedAt: "desc" },
-    take: 50,
+    take: 100,
   });
 
   res.json(tasks);
