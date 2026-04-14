@@ -1,0 +1,9 @@
+{
+  "name": "kdc-reset-cron",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "reset.js",
+  "scripts": {
+    "start": "node reset.js"
+  }
+}
