@@ -21,6 +21,8 @@ app.get("/health", (_req, res) => {
 
 const PORT = process.env.PORT || 3001;
 const SECRET = process.env.JWT_SECRET || "supersecret";
+const INTERNAL_RESET_SECRET =
+  process.env.INTERNAL_RESET_SECRET || "change-me-reset-secret";
 
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -570,6 +572,32 @@ app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) =
   });
 
   res.json({ success: true });
+});
+
+app.post("/internal/reset-daily-tasks", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || authHeader !== `Bearer ${INTERNAL_RESET_SECRET}`) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const result = await prisma.task.updateMany({
+      data: {
+        completed: false,
+        completedAt: null,
+      },
+    });
+
+    res.json({
+      success: true,
+      resetCount: result.count,
+      ranAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("INTERNAL RESET ERROR:", error);
+    res.status(500).json({ error: "Automatic reset failed" });
+  }
 });
 
 process.on("uncaughtException", (err) => {
