@@ -347,6 +347,63 @@ app.post("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
   res.json(entry);
 });
 
+app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  const siteId = req.currentUser.siteId;
+  const userId = req.currentUser.id;
+
+  const [site, allTasks, completedToday, latestTemps] = await Promise.all([
+    prisma.site.findUnique({
+      where: { id: siteId },
+      select: {
+        id: true,
+        name: true,
+        resetHour: true,
+        resetMinute: true,
+        resetEnabled: true,
+      },
+    }),
+
+    prisma.task.findMany({
+      where: {
+        siteId,
+        assignedUserId: userId,
+      },
+      orderBy: { id: "asc" },
+    }),
+
+    prisma.task.count({
+      where: {
+        siteId,
+        assignedUserId: userId,
+        completedAt: {
+          gte: todayStart,
+        },
+      },
+    }),
+
+    prisma.temperatureLog.findMany({
+      where: { siteId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+  ]);
+
+  const remainingTasks = allTasks.filter((task) => !task.completed).length;
+
+  res.json({
+    site,
+    tasks: allTasks,
+    completedToday,
+    remainingTasks,
+    latestTemps,
+    generatedAt: now.toISOString(),
+  });
+});
+
 app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
   const users = await prisma.user.findMany({
     where: {
