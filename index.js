@@ -396,6 +396,46 @@ app.post("/manager/sites", requireAuth, requireManager, async (req, res) => {
   }
 });
 
+app.post("/manager/sites/:id/reset-settings", requireAuth, requireManager, async (req, res) => {
+  const siteId = Number(req.params.id);
+  const { resetHour, resetMinute, resetEnabled } = req.body;
+
+  try {
+    const site = await prisma.site.update({
+      where: { id: siteId },
+      data: {
+        resetHour: Number(resetHour),
+        resetMinute: Number(resetMinute),
+        resetEnabled: Boolean(resetEnabled),
+      },
+    });
+
+    res.json(site);
+  } catch (error) {
+    console.error("UPDATE SITE RESET SETTINGS ERROR:", error);
+    res.status(400).json({ error: "Could not update site reset settings" });
+  }
+});
+
+app.get("/manager/reset-logs", requireAuth, requireManager, async (req, res) => {
+  const logs = await prisma.resetLog.findMany({
+    where: {
+      siteId: req.currentUser.siteId,
+    },
+    include: {
+      site: {
+        select: {
+          name: true,
+        },
+      },
+    },
+    orderBy: { ranAt: "desc" },
+    take: 50,
+  });
+
+  res.json(logs);
+});
+
 app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res) => {
   const userId = Number(req.params.id);
   const { siteId } = req.body;
@@ -582,17 +622,51 @@ app.post("/internal/reset-daily-tasks", async (req, res) => {
   }
 
   try {
-    const result = await prisma.task.updateMany({
-      data: {
-        completed: false,
-        completedAt: null,
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+
+    const sites = await prisma.site.findMany({
+      where: {
+        resetEnabled: true,
+        resetHour: currentHour,
+        resetMinute: currentMinute,
       },
+      orderBy: { id: "asc" },
     });
+
+    const results = [];
+
+    for (const site of sites) {
+      const resetResult = await prisma.task.updateMany({
+        where: {
+          siteId: site.id,
+        },
+        data: {
+          completed: false,
+          completedAt: null,
+        },
+      });
+
+      await prisma.resetLog.create({
+        data: {
+          siteId: site.id,
+          resetCount: resetResult.count,
+        },
+      });
+
+      results.push({
+        siteId: site.id,
+        siteName: site.name,
+        resetCount: resetResult.count,
+      });
+    }
 
     res.json({
       success: true,
-      resetCount: result.count,
-      ranAt: new Date().toISOString(),
+      ranAt: now.toISOString(),
+      siteCount: results.length,
+      results,
     });
   } catch (error) {
     console.error("INTERNAL RESET ERROR:", error);

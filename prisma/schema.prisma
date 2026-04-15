@@ -10,9 +10,13 @@ datasource db {
 model Site {
   id              Int              @id @default(autoincrement())
   name            String           @unique
+  resetHour       Int              @default(5)
+  resetMinute     Int              @default(0)
+  resetEnabled    Boolean          @default(true)
   users           User[]
   tasks           Task[]
   temperatureLogs TemperatureLog[]
+  resetLogs       ResetLog[]
 }
 
 model User {
@@ -47,4 +51,12 @@ model TemperatureLog {
   siteId       Int?
   site         Site?    @relation(fields: [siteId], references: [id])
   createdAt    DateTime @default(now())
+}
+
+model ResetLog {
+  id         Int      @id @default(autoincrement())
+  siteId      Int
+  site        Site     @relation(fields: [siteId], references: [id])
+  resetCount Int
+  ranAt      DateTime @default(now())
 }
