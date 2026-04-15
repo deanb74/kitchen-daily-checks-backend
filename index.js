@@ -436,6 +436,67 @@ app.get("/manager/reset-logs", requireAuth, requireManager, async (req, res) => 
   res.json(logs);
 });
 
+app.get("/manager/dashboard", requireAuth, requireManager, async (req, res) => {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  const siteId = req.currentUser.siteId;
+
+  const [activeAlerts, completedToday, incompleteTasks, latestTemps, site] =
+    await Promise.all([
+      prisma.temperatureLog.count({
+        where: {
+          siteId,
+          status: { not: "green" },
+          acknowledged: false,
+        },
+      }),
+
+      prisma.task.count({
+        where: {
+          siteId,
+          completedAt: {
+            gte: todayStart,
+          },
+        },
+      }),
+
+      prisma.task.count({
+        where: {
+          siteId,
+          completed: false,
+        },
+      }),
+
+      prisma.temperatureLog.findMany({
+        where: { siteId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+
+      prisma.site.findUnique({
+        where: { id: siteId },
+        select: {
+          id: true,
+          name: true,
+          resetHour: true,
+          resetMinute: true,
+          resetEnabled: true,
+        },
+      }),
+    ]);
+
+  res.json({
+    site,
+    activeAlerts,
+    completedToday,
+    incompleteTasks,
+    latestTemps,
+    generatedAt: now.toISOString(),
+  });
+});
+
 app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res) => {
   const userId = Number(req.params.id);
   const { siteId } = req.body;
