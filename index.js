@@ -256,6 +256,14 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       return res.status(404).json({ error: "Task not found" });
     }
 
+    if (existingTask.completed) {
+      return res.json({
+        success: true,
+        alreadyCompleted: true,
+        task: existingTask,
+      });
+    }
+
     const task = await prisma.task.update({
       where: { id },
       data: {
@@ -264,10 +272,14 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       },
     });
 
-    res.json(task);
+    res.json({
+      success: true,
+      alreadyCompleted: false,
+      task,
+    });
   } catch (error) {
     console.error("COMPLETE TASK ERROR:", error);
-    res.status(404).json({ error: "Task not found" });
+    res.status(500).json({ error: "Could not complete task" });
   }
 });
 
@@ -289,6 +301,29 @@ app.post("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
   }
 
   const temp = Number(value);
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+  const existingRecentLog = await prisma.temperatureLog.findFirst({
+    where: {
+      siteId: req.currentUser.siteId,
+      fridge,
+      type,
+      value: temp,
+      createdAt: {
+        gte: fiveMinutesAgo,
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (existingRecentLog) {
+    return res.json({
+      success: true,
+      duplicate: true,
+      entry: existingRecentLog,
+    });
+  }
+
   let status = "green";
 
   if (type === "fridge") {
