@@ -589,6 +589,92 @@ app.get("/manager/dashboard", requireAuth, requireManager, async (req, res) => {
   });
 });
 
+app.get("/manager/analytics", requireAuth, requireManager, async (req, res) => {
+  const range = req.query.range;
+  const dateFilter = getDateFilter(range);
+  const siteId = req.currentUser.siteId;
+
+  const tempWhere = {
+    siteId,
+    ...(dateFilter ? { createdAt: dateFilter } : {}),
+  };
+
+  const taskWhere = {
+    siteId,
+    ...(dateFilter ? { completedAt: dateFilter } : {}),
+  };
+
+  const [amberAlerts, redAlerts, completedTasks, incompleteTasks, latestResetLog, problemUnits] =
+    await Promise.all([
+      prisma.temperatureLog.count({
+        where: {
+          ...tempWhere,
+          status: "amber",
+        },
+      }),
+
+      prisma.temperatureLog.count({
+        where: {
+          ...tempWhere,
+          status: "red",
+        },
+      }),
+
+      prisma.task.count({
+        where: {
+          ...taskWhere,
+          completedAt: {
+            ...(dateFilter || {}),
+            not: null,
+          },
+        },
+      }),
+
+      prisma.task.count({
+        where: {
+          siteId,
+          completed: false,
+        },
+      }),
+
+      prisma.resetLog.findFirst({
+        where: { siteId },
+        orderBy: { ranAt: "desc" },
+      }),
+
+      prisma.temperatureLog.groupBy({
+        by: ["fridge"],
+        where: {
+          ...tempWhere,
+          status: {
+            in: ["amber", "red"],
+          },
+        },
+        _count: {
+          fridge: true,
+        },
+        orderBy: {
+          _count: {
+            fridge: "desc",
+          },
+        },
+        take: 5,
+      }),
+    ]);
+
+  res.json({
+    activeAlerts: amberAlerts + redAlerts,
+    amberAlerts,
+    redAlerts,
+    completedTasks,
+    incompleteTasks,
+    latestResetLog,
+    problemUnits,
+    range: range || "all",
+    generatedAt: new Date().toISOString(),
+  });
+});
+
 app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res) => {
   const userId = Number(req.params.id);
   const { siteId } = req.body;
