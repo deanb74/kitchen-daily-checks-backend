@@ -23,6 +23,12 @@ const PORT = process.env.PORT || 3001;
 const SECRET = process.env.JWT_SECRET || "supersecret";
 const INTERNAL_RESET_SECRET =
   process.env.INTERNAL_RESET_SECRET || "change-me-reset-secret";
+const INTERNAL_REPORT_SECRET =
+  process.env.INTERNAL_REPORT_SECRET || "change-me-report-secret";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const REPORT_FROM = process.env.REPORT_FROM || "";
+const REPORT_TO = process.env.REPORT_TO || "";
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -1008,6 +1014,142 @@ process.on("uncaughtException", (err) => {
 
 process.on("unhandledRejection", (err) => {
   console.error("UNHANDLED REJECTION:", err);
+});
+
+app.post("/internal/email-daily-report", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || authHeader !== `Bearer ${INTERNAL_REPORT_SECRET}`) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!resend || !REPORT_FROM || !REPORT_TO) {
+    return res.status(500).json({ error: "Email service not configured" });
+  }
+
+  try {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const sites = await prisma.site.findMany({
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        name: true,
+        resetHour: true,
+        resetMinute: true,
+        resetEnabled: true,
+      },
+    });
+
+    const sections = [];
+
+    for (const site of sites) {
+      const [activeAlerts, completedToday, incompleteTasks, latestReset, problemUnits] =
+        await Promise.all([
+          prisma.temperatureLog.count({
+            where: {
+              siteId: site.id,
+              status: { in: ["amber", "red"] },
+              acknowledged: false,
+            },
+          }),
+
+          prisma.task.count({
+            where: {
+              siteId: site.id,
+              completedAt: { gte: todayStart },
+            },
+          }),
+
+          prisma.task.count({
+            where: {
+              siteId: site.id,
+              completed: false,
+            },
+          }),
+
+          prisma.resetLog.findFirst({
+            where: { siteId: site.id },
+            orderBy: { ranAt: "desc" },
+          }),
+
+          prisma.temperatureLog.groupBy({
+            by: ["fridge"],
+            where: {
+              siteId: site.id,
+              createdAt: { gte: todayStart },
+              status: { in: ["amber", "red"] },
+            },
+            _count: { fridge: true },
+            orderBy: {
+              _count: { fridge: "desc" },
+            },
+            take: 3,
+          }),
+        ]);
+
+      const problemsHtml =
+        problemUnits.length === 0
+          ? "<li>No problematic units today</li>"
+          : problemUnits
+              .map(
+                (u) => `<li>${u.fridge}: ${u._count.fridge} alert(s)</li>`
+              )
+              .join("");
+
+      sections.push(`
+        <h2>${site.name}</h2>
+        <ul>
+          <li>Active alerts: ${activeAlerts}</li>
+          <li>Completed tasks today: ${completedToday}</li>
+          <li>Incomplete tasks: ${incompleteTasks}</li>
+          <li>Next reset: ${
+            site.resetEnabled
+              ? `${String(site.resetHour).padStart(2, "0")}:${String(site.resetMinute).padStart(2, "0")}`
+              : "Disabled"
+          }</li>
+          <li>Latest reset: ${
+            latestReset ? new Date(latestReset.ranAt).toLocaleString() : "None"
+          }</li>
+        </ul>
+        <h3>Most problematic units today</h3>
+        <ul>${problemsHtml}</ul>
+      `);
+    }
+
+    const subject = `Kitchen Daily Checks Report — ${now.toLocaleDateString()}`;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #222;">
+        <h1>Kitchen Daily Checks Daily Report</h1>
+        <p>Generated: ${now.toLocaleString()}</p>
+        ${sections.join("<hr style='margin:24px 0;' />")}
+      </div>
+    `;
+
+    const { data, error } = await resend.emails.send({
+      from: REPORT_FROM,
+      to: [REPORT_TO],
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error("RESEND ERROR:", error);
+      return res.status(500).json({ error: "Failed to send email", details: error });
+    }
+
+    res.json({
+      success: true,
+      sentAt: now.toISOString(),
+      emailId: data?.id || null,
+    });
+  } catch (error) {
+    console.error("EMAIL REPORT ERROR:", error);
+    res.status(500).json({ error: "Could not generate email report" });
+  }
 });
 
 const HOST = "0.0.0.0";
