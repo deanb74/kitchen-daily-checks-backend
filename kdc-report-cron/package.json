@@ -1,0 +1,9 @@
+{
+  "name": "kdc-report-cron",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "report.js",
+  "scripts": {
+    "start": "node report.js"
+  }
+}
