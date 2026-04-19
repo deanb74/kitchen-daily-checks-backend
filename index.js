@@ -675,6 +675,95 @@ app.get("/manager/analytics", requireAuth, requireManager, async (req, res) => {
   });
 });
 
+app.get("/manager/analytics/trends", requireAuth, requireManager, async (req, res) => {
+  const range = req.query.range;
+  const dateFilter = getDateFilter(range);
+  const siteId = req.currentUser.siteId;
+
+  const tempWhere = {
+    siteId,
+    ...(dateFilter ? { createdAt: dateFilter } : {}),
+  };
+
+  const taskWhere = {
+    siteId,
+    ...(dateFilter ? { completedAt: dateFilter } : {}),
+  };
+
+  const resetWhere = {
+    siteId,
+    ...(dateFilter ? { ranAt: dateFilter } : {}),
+  };
+
+  const [temperatureLogs, completedTasks, resetLogs] = await Promise.all([
+    prisma.temperatureLog.findMany({
+      where: tempWhere,
+      select: {
+        createdAt: true,
+        status: true,
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+
+    prisma.task.findMany({
+      where: {
+        ...taskWhere,
+        completedAt: {
+          ...(dateFilter || {}),
+          not: null,
+        },
+      },
+      select: {
+        completedAt: true,
+      },
+      orderBy: { completedAt: "asc" },
+    }),
+
+    prisma.resetLog.findMany({
+      where: resetWhere,
+      select: {
+        ranAt: true,
+      },
+      orderBy: { ranAt: "asc" },
+    }),
+  ]);
+
+  const byDay = (items, dateField, filterFn = null) => {
+    const grouped = {};
+
+    for (const item of items) {
+      if (filterFn && !filterFn(item)) continue;
+
+      const date = new Date(item[dateField]);
+      const key = date.toISOString().slice(0, 10);
+
+      grouped[key] = (grouped[key] || 0) + 1;
+    }
+
+    return Object.entries(grouped).map(([date, count]) => ({
+      date,
+      count,
+    }));
+  };
+
+  const alertTrends = byDay(
+    temperatureLogs,
+    "createdAt",
+    (item) => item.status === "amber" || item.status === "red"
+  );
+
+  const completedTaskTrends = byDay(completedTasks, "completedAt");
+  const resetTrends = byDay(resetLogs, "ranAt");
+
+  res.json({
+    range: range || "all",
+    alertTrends,
+    completedTaskTrends,
+    resetTrends,
+    generatedAt: new Date().toISOString(),
+  });
+});
+
 app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res) => {
   const userId = Number(req.params.id);
   const { siteId } = req.body;
