@@ -1018,8 +1018,10 @@ process.on("unhandledRejection", (err) => {
 
 app.post("/internal/email-daily-report", async (req, res) => {
   const authHeader = req.headers.authorization;
-  console.log("REPORT AUTH HEADER:", req.headers.authorization);
+  console.log("=== REPORT AUTH DEBUG START ===");
+  console.log("REPORT AUTH HEADER:", authHeader);
   console.log("EXPECTED INTERNAL_REPORT_SECRET:", INTERNAL_REPORT_SECRET);
+  console.log("=== REPORT AUTH DEBUG END ===");
 
   if (!authHeader || authHeader !== `Bearer ${INTERNAL_REPORT_SECRET}`) {
     return res.status(401).json({ error: "Unauthorized" });
