@@ -13,6 +13,10 @@ model Site {
   resetHour       Int              @default(5)
   resetMinute     Int              @default(0)
   resetEnabled    Boolean          @default(true)
+  reportEmail     String?
+  reportHour      Int              @default(6)
+  reportMinute    Int              @default(0)
+  reportEnabled   Boolean          @default(false)
   users           User[]
   tasks           Task[]
   temperatureLogs TemperatureLog[]
@@ -55,8 +59,8 @@ model TemperatureLog {
 
 model ResetLog {
   id         Int      @id @default(autoincrement())
-  siteId      Int
-  site        Site     @relation(fields: [siteId], references: [id])
+  siteId     Int
+  site       Site     @relation(fields: [siteId], references: [id])
   resetCount Int
   ranAt      DateTime @default(now())
 }
