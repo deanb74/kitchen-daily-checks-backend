@@ -471,6 +471,17 @@ app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
 app.get("/manager/sites", requireAuth, requireManager, async (_req, res) => {
   const sites = await prisma.site.findMany({
     orderBy: { id: "asc" },
+    select: {
+      id: true,
+      name: true,
+      resetHour: true,
+      resetMinute: true,
+      resetEnabled: true,
+      reportEmail: true,
+      reportHour: true,
+      reportMinute: true,
+      reportEnabled: true,
+    },
   });
 
   res.json(sites);
