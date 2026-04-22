@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
 import jwt from "jsonwebtoken";
+import { Resend } from "resend";
 
 const app = express();
 const prisma = new PrismaClient();
