@@ -448,21 +448,12 @@ app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => 
 
 app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
   const users = await prisma.user.findMany({
-    where: {
-      siteId: req.currentUser.siteId,
+    include: {
+      site: true,
     },
-    select: {
-      id: true,
-      email: true,
-      role: true,
-      siteId: true,
-      site: {
-        select: {
-          name: true,
-        },
-      },
+    orderBy: {
+      id: "asc",
     },
-    orderBy: { id: "asc" },
   });
 
   res.json(users);
