@@ -29,6 +29,9 @@ model User {
   password  String
   role      String  @default("staff")
   pushToken String?
+  department String?
+  regionId   Int?
+  areaId     Int?
   siteId    Int?
   site      Site?   @relation(fields: [siteId], references: [id])
   tasks     Task[]
@@ -43,6 +46,9 @@ model Task {
   assignedUser   User?     @relation(fields: [assignedUserId], references: [id])
   siteId         Int?
   site           Site?     @relation(fields: [siteId], references: [id])
+
+  department     String    @default("kitchen")
+  frequency      String    @default("daily")
 }
 
 model TemperatureLog {
@@ -63,4 +69,13 @@ model ResetLog {
   site       Site     @relation(fields: [siteId], references: [id])
   resetCount Int
   ranAt      DateTime @default(now())
+}
+
+model TaskTemplate {
+  id          Int     @id @default(autoincrement())
+  name        String
+  department  String  @default("kitchen")
+  frequency   String  @default("daily")
+  autoCreate  Boolean @default(false)
+  schedule    String?
 }

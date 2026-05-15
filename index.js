@@ -99,6 +99,25 @@ function getDateFilter(range) {
   return undefined;
 }
 
+function getManagerSiteId(req) {
+  const siteId = req.query.siteId || req.body.siteId || req.currentUser.siteId;
+  return Number(siteId);
+}
+
+function applyDepartmentScope(req, where = {}) {
+  if (
+    req.currentUser?.role === "department_manager" &&
+    req.currentUser?.department
+  ) {
+    return {
+      ...where,
+      department: req.currentUser.department,
+    };
+  }
+
+  return where;
+}
+
 async function sendExpoPushNotifications(messages) {
   try {
     const response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -236,11 +255,16 @@ app.post("/push-token", requireAuth, attachCurrentUser, async (req, res) => {
 });
 
 app.get("/tasks", requireAuth, attachCurrentUser, async (req, res) => {
+  const department = req.query.department;
+
+  const where = applyDepartmentScope(req, {
+    assignedUserId: req.currentUser.id,
+    siteId: req.currentUser.siteId,
+    ...(department && department !== "all" ? { department } : {}),
+  });
+
   const tasks = await prisma.task.findMany({
-    where: {
-      assignedUserId: req.currentUser.id,
-      siteId: req.currentUser.siteId,
-    },
+    where,
     orderBy: { id: "asc" },
   });
 
@@ -508,9 +532,10 @@ app.post("/manager/sites/:id/reset-settings", requireAuth, requireManager, async
 });
 
 app.get("/manager/reset-logs", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
   const logs = await prisma.resetLog.findMany({
     where: {
-      siteId: req.currentUser.siteId,
+      siteId,
     },
     include: {
       site: {
@@ -531,7 +556,7 @@ app.get("/manager/dashboard", requireAuth, requireManager, async (req, res) => {
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
 
-  const siteId = req.currentUser.siteId;
+  const siteId = getManagerSiteId(req);
 
   const [activeAlerts, completedToday, incompleteTasks, latestTemps, site] =
     await Promise.all([
@@ -590,7 +615,7 @@ app.get("/manager/dashboard", requireAuth, requireManager, async (req, res) => {
 app.get("/manager/analytics", requireAuth, requireManager, async (req, res) => {
   const range = req.query.range;
   const dateFilter = getDateFilter(range);
-  const siteId = req.currentUser.siteId;
+  const siteId = getManagerSiteId(req);
 
   const tempWhere = {
     siteId,
@@ -676,7 +701,7 @@ app.get("/manager/analytics", requireAuth, requireManager, async (req, res) => {
 app.get("/manager/analytics/trends", requireAuth, requireManager, async (req, res) => {
   const range = req.query.range;
   const dateFilter = getDateFilter(range);
-  const siteId = req.currentUser.siteId;
+  const siteId = getManagerSiteId(req);
 
   const tempWhere = {
     siteId,
@@ -786,6 +811,24 @@ app.post("/manager/users/:id/site", requireAuth, requireManager, async (req, res
   }
 });
 
+app.post("/manager/users/:id/department", requireAuth, requireManager, async (req, res) => {
+  const userId = Number(req.params.id);
+  const { department } = req.body;
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { department },
+      include: { site: true },
+    });
+
+    res.json(user);
+  } catch (error) {
+    console.error("UPDATE USER DEPARTMENT ERROR:", error);
+    res.status(400).json({ error: "Could not update user department" });
+  }
+});
+
 app.post("/manager/users/:id/role", requireAuth, requireManager, async (req, res) => {
   const userId = Number(req.params.id);
   const { role } = req.body;
@@ -811,9 +854,10 @@ app.post("/manager/users/:id/role", requireAuth, requireManager, async (req, res
 });
 
 app.get("/manager/alerts", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
   const alerts = await prisma.temperatureLog.findMany({
     where: {
-      siteId: req.currentUser.siteId,
+      siteId,
       status: {
         not: "green",
       },
@@ -826,9 +870,10 @@ app.get("/manager/alerts", requireAuth, requireManager, async (req, res) => {
 });
 
 app.get("/manager/alerts/history", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
   const alerts = await prisma.temperatureLog.findMany({
     where: {
-      siteId: req.currentUser.siteId,
+      siteId,
       status: {
         not: "green",
       },
@@ -843,10 +888,11 @@ app.get("/manager/alerts/history", requireAuth, requireManager, async (req, res)
 app.get("/manager/reports/temperatures", requireAuth, requireManager, async (req, res) => {
   const range = req.query.range;
   const createdAt = getDateFilter(range);
+  const siteId = getManagerSiteId(req);
 
   const logs = await prisma.temperatureLog.findMany({
     where: {
-      siteId: req.currentUser.siteId,
+      siteId,
       ...(createdAt ? { createdAt } : {}),
     },
     orderBy: { createdAt: "desc" },
@@ -859,12 +905,15 @@ app.get("/manager/reports/temperatures", requireAuth, requireManager, async (req
 app.get("/manager/reports/tasks", requireAuth, requireManager, async (req, res) => {
   const range = req.query.range;
   const completedAt = getDateFilter(range);
+  const siteId = getManagerSiteId(req);
+
+  const taskWhere = applyDepartmentScope(req, {
+    siteId,
+    completedAt: completedAt ? completedAt : { not: null },
+  });
 
   const tasks = await prisma.task.findMany({
-    where: {
-      siteId: req.currentUser.siteId,
-      completedAt: completedAt ? completedAt : { not: null },
-    },
+    where: taskWhere,
     include: {
       assignedUser: {
         select: {
@@ -881,12 +930,13 @@ app.get("/manager/reports/tasks", requireAuth, requireManager, async (req, res) 
 
 app.post("/manager/alerts/:id/acknowledge", requireAuth, requireManager, async (req, res) => {
   const id = Number(req.params.id);
+  const siteId = getManagerSiteId(req);
 
   try {
     const existing = await prisma.temperatureLog.findFirst({
       where: {
         id,
-        siteId: req.currentUser.siteId,
+        siteId,
       },
     });
 
@@ -909,17 +959,20 @@ app.post("/manager/alerts/:id/acknowledge", requireAuth, requireManager, async (
 });
 
 app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
-  const { name, assignedUserId } = req.body;
+  const { name, assignedUserId, department, frequency } = req.body;
 
   if (!name || !assignedUserId) {
     return res.status(400).json({ error: "name and assignedUserId are required" });
   }
 
+  const siteId = getManagerSiteId(req);
   const task = await prisma.task.create({
     data: {
       name,
       assignedUserId: Number(assignedUserId),
-      siteId: req.currentUser.siteId,
+      department: department || "kitchen",
+      frequency: frequency || "daily",
+      siteId,
     },
   });
 
@@ -927,9 +980,10 @@ app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
 });
 
 app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
   await prisma.task.updateMany({
     where: {
-      siteId: req.currentUser.siteId,
+      siteId,
     },
     data: {
       completed: false,
@@ -938,6 +992,34 @@ app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) =
   });
 
   res.json({ success: true });
+});
+
+app.get("/manager/task-templates", requireAuth, requireManager, async (_req, res) => {
+  const templates = await prisma.taskTemplate.findMany({
+    orderBy: { id: "asc" },
+  });
+
+  res.json(templates);
+});
+
+app.post("/manager/task-templates", requireAuth, requireManager, async (req, res) => {
+  const { name, department, frequency, autoCreate, schedule } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ error: "Template name is required" });
+  }
+
+  const template = await prisma.taskTemplate.create({
+    data: {
+      name,
+      department: department || "kitchen",
+      frequency: frequency || "daily",
+      autoCreate: Boolean(autoCreate),
+      schedule: schedule || null,
+    },
+  });
+
+  res.json(template);
 });
 
 app.post("/internal/reset-daily-tasks", async (req, res) => {
