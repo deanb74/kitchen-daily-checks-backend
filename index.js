@@ -1115,6 +1115,93 @@ app.post("/internal/reset-daily-tasks", async (req, res) => {
   }
 });
 
+app.post("/internal/generate-template-tasks", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || authHeader !== `Bearer ${INTERNAL_RESET_SECRET}`) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const templates = await prisma.taskTemplate.findMany({
+      where: {
+        autoCreate: true,
+      },
+      orderBy: { id: "asc" },
+    });
+
+    const users = await prisma.user.findMany({
+      where: {
+        role: {
+          in: ["staff", "department_manager"],
+        },
+        siteId: {
+          not: null,
+        },
+      },
+    });
+
+    const created = [];
+    const skipped = [];
+
+    for (const template of templates) {
+      const matchingUsers = users.filter(
+        (user) =>
+          user.department === template.department ||
+          !user.department
+      );
+
+      for (const user of matchingUsers) {
+        const existing = await prisma.task.findFirst({
+          where: {
+            templateId: template.id,
+            taskDate: today,
+            assignedUserId: user.id,
+            siteId: user.siteId,
+          },
+        });
+
+        if (existing) {
+          skipped.push({
+            templateId: template.id,
+            userId: user.id,
+            reason: "Already exists",
+          });
+          continue;
+        }
+
+        const task = await prisma.task.create({
+          data: {
+            name: template.name,
+            department: template.department,
+            frequency: template.frequency,
+            templateId: template.id,
+            taskDate: today,
+            assignedUserId: user.id,
+            siteId: user.siteId,
+          },
+        });
+
+        created.push(task);
+      }
+    }
+
+    res.json({
+      success: true,
+      taskDate: today,
+      createdCount: created.length,
+      skippedCount: skipped.length,
+      created,
+      skipped,
+    });
+  } catch (error) {
+    console.error("GENERATE TEMPLATE TASKS ERROR:", error);
+    res.status(500).json({ error: "Could not generate template tasks" });
+  }
+});
+
 process.on("uncaughtException", (err) => {
   console.error("UNCAUGHT EXCEPTION:", err);
 });
