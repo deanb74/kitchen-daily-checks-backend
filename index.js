@@ -1022,6 +1022,39 @@ app.post("/manager/task-templates", requireAuth, requireManager, async (req, res
   res.json(template);
 });
 
+app.post("/manager/task-templates/apply", requireAuth, requireManager, async (req, res) => {
+  const { templateId, assignedUserId, siteId } = req.body;
+
+  if (!templateId || !assignedUserId) {
+    return res.status(400).json({ error: "templateId and assignedUserId are required" });
+  }
+
+  try {
+    const template = await prisma.taskTemplate.findUnique({
+      where: { id: Number(templateId) },
+    });
+
+    if (!template) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    const task = await prisma.task.create({
+      data: {
+        name: template.name,
+        department: template.department,
+        frequency: template.frequency,
+        assignedUserId: Number(assignedUserId),
+        siteId: Number(siteId || req.currentUser.siteId),
+      },
+    });
+
+    res.json(task);
+  } catch (error) {
+    console.error("APPLY TEMPLATE ERROR:", error);
+    res.status(400).json({ error: "Could not apply template" });
+  }
+});
+
 app.post("/internal/reset-daily-tasks", async (req, res) => {
   const authHeader = req.headers.authorization;
 
