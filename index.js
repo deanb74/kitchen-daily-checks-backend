@@ -1055,6 +1055,57 @@ app.post("/manager/task-templates/apply", requireAuth, requireManager, async (re
   }
 });
 
+app.get("/manager/compliance-dashboard", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+
+  const tasks = await prisma.task.findMany({
+    where: { siteId },
+  });
+
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const overdueTasks = tasks.filter(
+    (task) => !task.completed && task.dueAt && new Date(task.dueAt) < new Date()
+  ).length;
+  const escalatedTasks = tasks.filter((task) => task.escalationLevel > 0).length;
+
+  const departmentBreakdown = {};
+
+  for (const task of tasks) {
+    const dept = task.department || "unknown";
+
+    if (!departmentBreakdown[dept]) {
+      departmentBreakdown[dept] = {
+        total: 0,
+        completed: 0,
+        overdue: 0,
+        escalated: 0,
+      };
+    }
+
+    departmentBreakdown[dept].total += 1;
+
+    if (task.completed) departmentBreakdown[dept].completed += 1;
+    if (!task.completed && task.dueAt && new Date(task.dueAt) < new Date()) {
+      departmentBreakdown[dept].overdue += 1;
+    }
+    if (task.escalationLevel > 0) {
+      departmentBreakdown[dept].escalated += 1;
+    }
+  }
+
+  res.json({
+    siteId,
+    totalTasks,
+    completedTasks,
+    overdueTasks,
+    escalatedTasks,
+    completionRate:
+      totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100),
+    departmentBreakdown,
+  });
+});
+
 app.post("/internal/reset-daily-tasks", async (req, res) => {
   const authHeader = req.headers.authorization;
 
