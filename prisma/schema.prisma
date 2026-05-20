@@ -84,4 +84,6 @@ model TaskTemplate {
   frequency   String  @default("daily")
   autoCreate  Boolean @default(false)
   schedule    String?
+  dueHour     Int?
+  dueMinute   Int?
 }

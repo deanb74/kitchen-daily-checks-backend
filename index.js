@@ -1138,6 +1138,15 @@ function shouldGenerateTemplate(template, now = new Date()) {
   }
 }
 
+function buildDueAt(taskDate, dueHour, dueMinute) {
+  if (dueHour === null || dueHour === undefined) return null;
+
+  const dueAt = new Date(`${taskDate}T00:00:00.000Z`);
+  dueAt.setUTCHours(Number(dueHour), Number(dueMinute || 0), 0, 0);
+
+  return dueAt;
+}
+
 app.post("/internal/generate-template-tasks", async (req, res) => {
   const authHeader = req.headers.authorization;
 
@@ -1204,6 +1213,8 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
           continue;
         }
 
+          const dueAt = buildDueAt(today, template.dueHour, template.dueMinute);
+
         const task = await prisma.task.create({
           data: {
             name: template.name,
@@ -1213,6 +1224,7 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
             taskDate: today,
             assignedUserId: user.id,
             siteId: user.siteId,
+              dueAt,
           },
         });
 
