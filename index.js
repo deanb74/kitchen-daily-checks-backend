@@ -1115,6 +1115,29 @@ app.post("/internal/reset-daily-tasks", async (req, res) => {
   }
 });
 
+function shouldGenerateTemplate(template, now = new Date()) {
+  const hour = now.getHours();
+  const day = now.getDay();
+  const date = now.getDate();
+
+  switch (template.schedule) {
+    case "opening":
+      return hour >= 5 && hour < 8;
+
+    case "closing":
+      return hour >= 16 && hour < 23;
+
+    case "weekly_monday":
+      return day === 1;
+
+    case "monthly_1st":
+      return date === 1;
+
+    default:
+      return true;
+  }
+}
+
 app.post("/internal/generate-template-tasks", async (req, res) => {
   const authHeader = req.headers.authorization;
 
@@ -1123,14 +1146,19 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
   }
 
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
 
-    const templates = await prisma.taskTemplate.findMany({
+    const allTemplates = await prisma.taskTemplate.findMany({
       where: {
         autoCreate: true,
       },
       orderBy: { id: "asc" },
     });
+
+    const templates = allTemplates.filter((template) =>
+      shouldGenerateTemplate(template, now)
+    );
 
     const users = await prisma.user.findMany({
       where: {
@@ -1147,6 +1175,10 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
     const skipped = [];
 
     for (const template of templates) {
+      if (!shouldGenerateTemplate(template)) {
+        continue;
+      }
+
       const matchingUsers = users.filter(
         (user) =>
           user.department === template.department ||
@@ -1208,6 +1240,113 @@ process.on("uncaughtException", (err) => {
 
 process.on("unhandledRejection", (err) => {
   console.error("UNHANDLED REJECTION:", err);
+});
+
+app.post("/internal/check-overdue-tasks", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || authHeader !== `Bearer ${INTERNAL_RESET_SECRET}`) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const now = new Date();
+
+    const overdueTasks = await prisma.task.findMany({
+      where: {
+        completed: false,
+        dueAt: {
+          not: null,
+          lt: now,
+        },
+      },
+      include: {
+        site: true,
+        assignedUser: true,
+      },
+    });
+
+    const escalated = [];
+
+    for (const task of overdueTasks) {
+      const nextLevel = Math.min((task.escalationLevel || 0) + 1, 3);
+
+      let managers = [];
+
+      if (nextLevel === 1) {
+        managers = await prisma.user.findMany({
+          where: {
+            role: "department_manager",
+            department: task.department,
+            siteId: task.siteId,
+            pushToken: { not: null },
+          },
+        });
+      }
+
+      if (nextLevel === 2) {
+        managers = await prisma.user.findMany({
+          where: {
+            role: "manager",
+            siteId: task.siteId,
+            pushToken: { not: null },
+          },
+        });
+      }
+
+      if (nextLevel === 3) {
+        managers = await prisma.user.findMany({
+          where: {
+            role: {
+              in: ["owner", "regional_manager", "area_manager"],
+            },
+            pushToken: { not: null },
+          },
+        });
+      }
+
+      const messages = managers.map((manager) => ({
+        to: manager.pushToken,
+        sound: "default",
+        title: "Overdue compliance task",
+        body: `${task.name} is overdue at ${task.site?.name || "site"}`,
+        data: {
+          screen: "manager",
+          taskId: task.id,
+          escalationLevel: nextLevel,
+        },
+      }));
+
+      if (messages.length > 0) {
+        await sendExpoPushNotifications(messages);
+      }
+
+      const updatedTask = await prisma.task.update({
+        where: { id: task.id },
+        data: {
+          escalationLevel: nextLevel,
+          lastEscalatedAt: now,
+        },
+      });
+
+      escalated.push({
+        taskId: updatedTask.id,
+        name: updatedTask.name,
+        escalationLevel: updatedTask.escalationLevel,
+        notifiedManagers: messages.length,
+      });
+    }
+
+    res.json({
+      success: true,
+      checkedAt: now.toISOString(),
+      overdueCount: overdueTasks.length,
+      escalated,
+    });
+  } catch (error) {
+    console.error("CHECK OVERDUE TASKS ERROR:", error);
+    res.status(500).json({ error: "Could not check overdue tasks" });
+  }
 });
 
 app.post("/internal/email-daily-report", async (req, res) => {

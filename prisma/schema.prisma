@@ -51,6 +51,10 @@ model Task {
 
   department     String    @default("kitchen")
   frequency      String    @default("daily")
+
+  dueAt              DateTime?
+  escalationLevel    Int       @default(0)
+  lastEscalatedAt    DateTime?
 }
 
 model TemperatureLog {
