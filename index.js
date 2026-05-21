@@ -316,6 +316,75 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
   }
 });
 
+app.post("/shift/start", requireAuth, attachCurrentUser, async (req, res) => {
+  try {
+    const user = req.currentUser;
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (!user.siteId) {
+      return res.status(400).json({ error: "User has no site assigned" });
+    }
+
+    const templates = await prisma.taskTemplate.findMany({
+      where: {
+        autoCreate: true,
+        ...(user.department ? { department: user.department } : {}),
+      },
+      orderBy: { id: "asc" },
+    });
+
+    const created = [];
+    const skipped = [];
+
+    for (const template of templates) {
+      if (!shouldGenerateTemplate(template)) continue;
+
+      const existing = await prisma.task.findFirst({
+        where: {
+          templateId: template.id,
+          taskDate: today,
+          assignedUserId: user.id,
+          siteId: user.siteId,
+        },
+      });
+
+      if (existing) {
+        skipped.push(existing);
+        continue;
+      }
+
+      const dueAt = buildDueAt(today, template.dueHour, template.dueMinute);
+
+      const task = await prisma.task.create({
+        data: {
+          name: template.name,
+          department: template.department,
+          frequency: template.frequency,
+          templateId: template.id,
+          taskDate: today,
+          dueAt,
+          assignedUserId: user.id,
+          siteId: user.siteId,
+        },
+      });
+
+      created.push(task);
+    }
+
+    res.json({
+      success: true,
+      taskDate: today,
+      createdCount: created.length,
+      skippedCount: skipped.length,
+      created,
+      skipped,
+    });
+  } catch (error) {
+    console.error("SHIFT START ERROR:", error);
+    res.status(500).json({ error: "Could not start shift" });
+  }
+});
+
 app.get("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
   const logs = await prisma.temperatureLog.findMany({
     where: {
