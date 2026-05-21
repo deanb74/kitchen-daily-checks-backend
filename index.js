@@ -1482,6 +1482,87 @@ app.get("/manager/risk-insights", requireAuth, requireManager, async (req, res) 
   });
 });
 
+app.get("/manager/executive-report", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+  const now = new Date();
+
+  const tasks = await prisma.task.findMany({
+    where: { siteId },
+    include: { assignedUser: true, site: true },
+  });
+
+  const shifts = await prisma.shift.findMany({
+    where: { siteId },
+    orderBy: { startedAt: "desc" },
+    take: 20,
+  });
+
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const overdueTasks = tasks.filter(
+    (task) => !task.completed && task.dueAt && new Date(task.dueAt) < now
+  );
+  const escalatedTasks = tasks.filter((task) => task.escalationLevel > 0);
+
+  const staff = {};
+
+  for (const task of tasks) {
+    if (!task.assignedUser) continue;
+
+    const key = task.assignedUser.email;
+
+    if (!staff[key]) {
+      staff[key] = {
+        email: task.assignedUser.email,
+        total: 0,
+        completed: 0,
+        overdue: 0,
+        escalated: 0,
+      };
+    }
+
+    staff[key].total += 1;
+    if (task.completed) staff[key].completed += 1;
+    if (!task.completed && task.dueAt && new Date(task.dueAt) < now) staff[key].overdue += 1;
+    if (task.escalationLevel > 0) staff[key].escalated += 1;
+  }
+
+  const staffPerformance = Object.values(staff).map((member) => ({
+    ...member,
+    completionRate:
+      member.total === 0 ? 0 : Math.round((member.completed / member.total) * 100),
+  }));
+
+  res.json({
+    generatedAt: now.toISOString(),
+    siteId,
+    summary: {
+      totalTasks,
+      completedTasks,
+      overdueTasks: overdueTasks.length,
+      escalatedTasks: escalatedTasks.length,
+      completionRate:
+        totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100),
+    },
+    staffPerformance,
+    recentShifts: shifts,
+    keyIssues: [
+      ...overdueTasks.slice(0, 10).map((task) => ({
+        type: "overdue",
+        task: task.name,
+        assignedTo: task.assignedUser?.email || "Unassigned",
+        dueAt: task.dueAt,
+      })),
+      ...escalatedTasks.slice(0, 10).map((task) => ({
+        type: "escalated",
+        task: task.name,
+        assignedTo: task.assignedUser?.email || "Unassigned",
+        escalationLevel: task.escalationLevel,
+      })),
+    ],
+  });
+});
+
 app.get("/manager/priority-queue", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
   const now = new Date();
