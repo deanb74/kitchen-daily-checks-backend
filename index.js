@@ -300,6 +300,8 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       data: {
         completed: true,
         completedAt: new Date(),
+        completedById: req.currentUser.id,
+        completedByEmail: req.currentUser.email,
       },
     });
 
@@ -1104,6 +1106,79 @@ app.get("/manager/compliance-dashboard", requireAuth, requireManager, async (req
       totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100),
     departmentBreakdown,
   });
+});
+
+app.get("/manager/priority-queue", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+  const now = new Date();
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      siteId,
+      completed: false,
+    },
+    include: {
+      assignedUser: true,
+      site: true,
+    },
+    orderBy: [
+      { escalationLevel: "desc" },
+      { dueAt: "asc" },
+      { id: "asc" },
+    ],
+  });
+
+  const priorityTasks = tasks.map((task) => {
+    let priority = "on_track";
+
+    if (task.dueAt && new Date(task.dueAt) < now) {
+      priority = "overdue";
+    } else if (task.escalationLevel > 0) {
+      priority = "escalated";
+    } else if (task.dueAt) {
+      const hoursUntilDue =
+        (new Date(task.dueAt).getTime() - now.getTime()) / (1000 * 60 * 60);
+
+      if (hoursUntilDue <= 2) {
+        priority = "due_soon";
+      }
+    }
+
+    return {
+      id: task.id,
+      name: task.name,
+      department: task.department,
+      frequency: task.frequency,
+      dueAt: task.dueAt,
+      escalationLevel: task.escalationLevel,
+      priority,
+      assignedUser: task.assignedUser
+        ? {
+            id: task.assignedUser.id,
+            email: task.assignedUser.email,
+          }
+        : null,
+      site: task.site
+        ? {
+            id: task.site.id,
+            name: task.site.name,
+          }
+        : null,
+    };
+  });
+
+  priorityTasks.sort((a, b) => {
+    const order = {
+      overdue: 1,
+      escalated: 2,
+      due_soon: 3,
+      on_track: 4,
+    };
+
+    return order[a.priority] - order[b.priority];
+  });
+
+  res.json(priorityTasks);
 });
 
 app.post("/internal/reset-daily-tasks", async (req, res) => {
