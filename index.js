@@ -1353,6 +1353,135 @@ app.get("/manager/staff-performance", requireAuth, requireManager, async (req, r
   res.json(performance);
 });
 
+app.get("/manager/risk-insights", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 7);
+
+  const tasks = await prisma.task.findMany({
+    where: { siteId },
+    include: { assignedUser: true },
+  });
+
+  const risks = [];
+
+  const overdue = tasks.filter(
+    (task) => !task.completed && task.dueAt && new Date(task.dueAt) < now
+  );
+
+  if (overdue.length > 0) {
+    risks.push({
+      level: "high",
+      title: "Overdue tasks need attention",
+      message: `${overdue.length} tasks are currently overdue.`,
+      type: "overdue_tasks",
+    });
+  }
+
+  const escalated = tasks.filter((task) => task.escalationLevel > 0);
+
+  if (escalated.length > 0) {
+    risks.push({
+      level: "high",
+      title: "Escalations active",
+      message: `${escalated.length} tasks have escalated.`,
+      type: "escalations",
+    });
+  }
+
+  const departmentStats = {};
+
+  for (const task of tasks) {
+    const dept = task.department || "unknown";
+
+    if (!departmentStats[dept]) {
+      departmentStats[dept] = { total: 0, completed: 0, overdue: 0, escalated: 0 };
+    }
+
+    departmentStats[dept].total += 1;
+    if (task.completed) departmentStats[dept].completed += 1;
+    if (!task.completed && task.dueAt && new Date(task.dueAt) < now) {
+      departmentStats[dept].overdue += 1;
+    }
+    if (task.escalationLevel > 0) {
+      departmentStats[dept].escalated += 1;
+    }
+  }
+
+  for (const [department, stats] of Object.entries(departmentStats)) {
+    const completionRate =
+      stats.total === 0 ? 100 : Math.round((stats.completed / stats.total) * 100);
+
+    if (completionRate < 50) {
+      risks.push({
+        level: "high",
+        title: `${department} compliance risk`,
+        message: `${department} completion rate is only ${completionRate}%.`,
+        type: "department_completion",
+        department,
+      });
+    } else if (completionRate < 80) {
+      risks.push({
+        level: "medium",
+        title: `${department} needs monitoring`,
+        message: `${department} completion rate is ${completionRate}%.`,
+        type: "department_completion",
+        department,
+      });
+    }
+  }
+
+  const staffStats = {};
+
+  for (const task of tasks) {
+    if (!task.assignedUser) continue;
+
+    const key = task.assignedUser.id;
+
+    if (!staffStats[key]) {
+      staffStats[key] = {
+        email: task.assignedUser.email,
+        total: 0,
+        completed: 0,
+        overdue: 0,
+        escalated: 0,
+      };
+    }
+
+    staffStats[key].total += 1;
+    if (task.completed) staffStats[key].completed += 1;
+    if (!task.completed && task.dueAt && new Date(task.dueAt) < now) {
+      staffStats[key].overdue += 1;
+    }
+    if (task.escalationLevel > 0) {
+      staffStats[key].escalated += 1;
+    }
+  }
+
+  for (const staff of Object.values(staffStats)) {
+    const completionRate =
+      staff.total === 0 ? 100 : Math.round((staff.completed / staff.total) * 100);
+
+    if (staff.overdue >= 3 || staff.escalated >= 2 || completionRate < 50) {
+      risks.push({
+        level: "high",
+        title: `${staff.email} may need support`,
+        message: `${staff.email} has ${staff.overdue} overdue and ${staff.escalated} escalated tasks. Completion rate: ${completionRate}%.`,
+        type: "staff_risk",
+        staffEmail: staff.email,
+      });
+    }
+  }
+
+  res.json({
+    siteId,
+    generatedAt: now.toISOString(),
+    riskCount: risks.length,
+    risks,
+  });
+});
+
 app.get("/manager/priority-queue", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
   const now = new Date();
