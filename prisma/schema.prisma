@@ -55,6 +55,8 @@ model Task {
   dueAt              DateTime?
   escalationLevel    Int       @default(0)
   lastEscalatedAt    DateTime?
+  completedById      Int?
+  completedByEmail   String?
 }
 
 model TemperatureLog {
@@ -86,4 +88,14 @@ model TaskTemplate {
   schedule    String?
   dueHour     Int?
   dueMinute   Int?
+}
+
+model Shift {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  siteId         Int?
+  department     String?
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  handoverNotes  String?
 }

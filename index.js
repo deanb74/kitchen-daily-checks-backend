@@ -325,6 +325,14 @@ app.post("/shift/start", requireAuth, attachCurrentUser, async (req, res) => {
       return res.status(400).json({ error: "User has no site assigned" });
     }
 
+    const shift = await prisma.shift.create({
+      data: {
+        userId: user.id,
+        siteId: user.siteId,
+        department: user.department || null,
+      },
+    });
+
     const templates = await prisma.taskTemplate.findMany({
       where: {
         autoCreate: true,
@@ -374,6 +382,7 @@ app.post("/shift/start", requireAuth, attachCurrentUser, async (req, res) => {
     res.json({
       success: true,
       taskDate: today,
+      shift,
       createdCount: created.length,
       skippedCount: skipped.length,
       created,
