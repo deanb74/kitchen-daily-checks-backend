@@ -636,6 +636,18 @@ app.get("/manager/sites", requireAuth, requireManager, async (_req, res) => {
   res.json(sites);
 });
 
+app.get("/manager/shifts", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+
+  const shifts = await prisma.shift.findMany({
+    where: { siteId },
+    orderBy: { startedAt: "desc" },
+    take: 50,
+  });
+
+  res.json(shifts);
+});
+
 app.post("/manager/sites", requireAuth, requireManager, async (req, res) => {
   const { name } = req.body;
 
