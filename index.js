@@ -1108,6 +1108,59 @@ app.get("/manager/compliance-dashboard", requireAuth, requireManager, async (req
   });
 });
 
+app.get("/manager/compliance-dashboard/details", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+  const { department, type } = req.query;
+  const now = new Date();
+
+  const where = {
+    siteId,
+    ...(department && department !== "all" ? { department: String(department) } : {}),
+  };
+
+  if (type === "completed") where.completed = true;
+  if (type === "open") where.completed = false;
+  if (type === "overdue") {
+    where.completed = false;
+    where.dueAt = { not: null, lt: now };
+  }
+  if (type === "escalated") {
+    where.escalationLevel = { gt: 0 };
+  }
+
+  const tasks = await prisma.task.findMany({
+    where,
+    include: {
+      assignedUser: true,
+      site: true,
+    },
+    orderBy: [
+      { escalationLevel: "desc" },
+      { dueAt: "asc" },
+      { id: "asc" },
+    ],
+  });
+
+  res.json(
+    tasks.map((task) => ({
+      id: task.id,
+      name: task.name,
+      department: task.department,
+      frequency: task.frequency,
+      completed: task.completed,
+      completedAt: task.completedAt,
+      completedById: task.completedById,
+      completedByEmail: task.completedByEmail,
+      dueAt: task.dueAt,
+      escalationLevel: task.escalationLevel,
+      assignedUser: task.assignedUser
+        ? { id: task.assignedUser.id, email: task.assignedUser.email }
+        : null,
+      site: task.site ? { id: task.site.id, name: task.site.name } : null,
+    }))
+  );
+});
+
 app.get("/manager/priority-queue", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
   const now = new Date();
