@@ -394,6 +394,71 @@ app.post("/shift/start", requireAuth, attachCurrentUser, async (req, res) => {
   }
 });
 
+app.post("/shift/end", requireAuth, attachCurrentUser, async (req, res) => {
+  try {
+    const user = req.currentUser;
+    const { handoverNotes } = req.body;
+    const now = new Date();
+
+    const shift = await prisma.shift.findFirst({
+      where: {
+        userId: user.id,
+        endedAt: null,
+      },
+      orderBy: { startedAt: "desc" },
+    });
+
+    if (!shift) {
+      return res.status(404).json({ error: "No open shift found" });
+    }
+
+    const openTasks = await prisma.task.findMany({
+      where: {
+        assignedUserId: user.id,
+        siteId: user.siteId,
+        completed: false,
+      },
+      orderBy: [
+        { escalationLevel: "desc" },
+        { dueAt: "asc" },
+        { id: "asc" },
+      ],
+    });
+
+    const overdueTasks = openTasks.filter(
+      (task) => task.dueAt && new Date(task.dueAt) < now
+    );
+
+    const escalatedTasks = openTasks.filter(
+      (task) => task.escalationLevel > 0
+    );
+
+    const updatedShift = await prisma.shift.update({
+      where: { id: shift.id },
+      data: {
+        endedAt: now,
+        handoverNotes: handoverNotes || null,
+      },
+    });
+
+    res.json({
+      success: true,
+      shift: updatedShift,
+      summary: {
+        openTaskCount: openTasks.length,
+        overdueTaskCount: overdueTasks.length,
+        escalatedTaskCount: escalatedTasks.length,
+      },
+      openTasks,
+      overdueTasks,
+      escalatedTasks,
+    });
+  } catch (error) {
+    console.error("SHIFT END ERROR:", error);
+    res.status(500).json({ error: "Could not end shift" });
+  }
+});
+
 app.get("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
   const logs = await prisma.temperatureLog.findMany({
     where: {
