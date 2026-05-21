@@ -1316,6 +1316,43 @@ app.get("/manager/compliance-dashboard/details", requireAuth, requireManager, as
   );
 });
 
+app.get("/manager/staff-performance", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+
+  const users = await prisma.user.findMany({
+    where: { siteId },
+    include: {
+      tasks: true,
+    },
+    orderBy: { id: "asc" },
+  });
+
+  const performance = users.map((user) => {
+    const totalTasks = user.tasks.length;
+    const completedTasks = user.tasks.filter((task) => task.completed).length;
+    const overdueTasks = user.tasks.filter(
+      (task) => !task.completed && task.dueAt && new Date(task.dueAt) < new Date()
+    ).length;
+    const escalatedTasks = user.tasks.filter((task) => task.escalationLevel > 0).length;
+
+    return {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      department: user.department,
+      siteId: user.siteId,
+      totalTasks,
+      completedTasks,
+      overdueTasks,
+      escalatedTasks,
+      completionRate:
+        totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100),
+    };
+  });
+
+  res.json(performance);
+});
+
 app.get("/manager/priority-queue", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
   const now = new Date();
