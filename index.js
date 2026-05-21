@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
 import jwt from "jsonwebtoken";
+import PDFDocument from "pdfkit";
 import { Resend } from "resend";
 
 const app = express();
@@ -1561,6 +1562,154 @@ app.get("/manager/executive-report", requireAuth, requireManager, async (req, re
       })),
     ],
   });
+});
+
+app.get("/manager/executive-report/pdf", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+  const now = new Date();
+
+  const tasks = await prisma.task.findMany({
+    where: { siteId },
+    include: { assignedUser: true, site: true },
+  });
+
+  const shifts = await prisma.shift.findMany({
+    where: { siteId },
+    orderBy: { startedAt: "desc" },
+    take: 20,
+  });
+
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const overdueTasks = tasks.filter(
+    (task) => !task.completed && task.dueAt && new Date(task.dueAt) < now
+  );
+  const escalatedTasks = tasks.filter((task) => task.escalationLevel > 0);
+
+  const staff = {};
+
+  for (const task of tasks) {
+    if (!task.assignedUser) continue;
+
+    const key = task.assignedUser.email;
+
+    if (!staff[key]) {
+      staff[key] = {
+        email: task.assignedUser.email,
+        total: 0,
+        completed: 0,
+        overdue: 0,
+        escalated: 0,
+      };
+    }
+
+    staff[key].total += 1;
+    if (task.completed) staff[key].completed += 1;
+    if (!task.completed && task.dueAt && new Date(task.dueAt) < now) staff[key].overdue += 1;
+    if (task.escalationLevel > 0) staff[key].escalated += 1;
+  }
+
+  const staffPerformance = Object.values(staff).map((member) => ({
+    ...member,
+    completionRate:
+      member.total === 0 ? 0 : Math.round((member.completed / member.total) * 100),
+  }));
+
+  const summary = {
+    totalTasks,
+    completedTasks,
+    overdueTasks: overdueTasks.length,
+    escalatedTasks: escalatedTasks.length,
+    completionRate:
+      totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100),
+  };
+
+  const recentShifts = shifts;
+
+  const keyIssues = [
+    ...overdueTasks.slice(0, 10).map((task) => ({
+      type: "overdue",
+      task: task.name,
+      assignedTo: task.assignedUser?.email || "Unassigned",
+      dueAt: task.dueAt,
+    })),
+    ...escalatedTasks.slice(0, 10).map((task) => ({
+      type: "escalated",
+      task: task.name,
+      assignedTo: task.assignedUser?.email || "Unassigned",
+      escalationLevel: task.escalationLevel,
+    })),
+  ];
+
+  const doc = new PDFDocument({ margin: 40 });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename=executive-report.pdf"
+  );
+
+  doc.pipe(res);
+
+  doc.fontSize(22).text("Executive Operations Report");
+  doc.moveDown();
+
+  doc.fontSize(16).text("Summary");
+  doc.fontSize(12).text(`Total Tasks: ${summary.totalTasks}`);
+  doc.text(`Completed: ${summary.completedTasks}`);
+  doc.text(`Overdue: ${summary.overdueTasks}`);
+  doc.text(`Escalated: ${summary.escalatedTasks}`);
+  doc.text(`Completion Rate: ${summary.completionRate}%`);
+
+  doc.moveDown();
+
+  doc.fontSize(16).text("Staff Performance");
+
+  staffPerformance.forEach((staff) => {
+    doc.fontSize(12).text(
+      `${staff.email} | Completion: ${staff.completionRate}% | Overdue: ${staff.overdue} | Escalated: ${staff.escalated}`
+    );
+  });
+
+  doc.moveDown();
+
+  doc.fontSize(16).text("Recent Shift Handovers");
+
+  recentShifts.forEach((shift) => {
+    doc.fontSize(12).text(
+      `User ${shift.userId} | Started: ${new Date(
+        shift.startedAt
+      ).toLocaleString()} | Ended: ${
+        shift.endedAt
+          ? new Date(shift.endedAt).toLocaleString()
+          : "Still open"
+      }`
+    );
+
+    if (shift.handoverNotes) {
+      doc.text(`Notes: ${shift.handoverNotes}`);
+    }
+
+    doc.moveDown(0.5);
+  });
+
+  doc.moveDown();
+
+  doc.fontSize(16).text("Key Issues");
+
+  keyIssues.forEach((issue) => {
+    doc.fontSize(12).text(
+      `${issue.type.toUpperCase()} - ${issue.task} - ${issue.assignedTo}`
+    );
+  });
+
+  doc.moveDown();
+
+  doc.fontSize(10).text(
+    `Generated: ${new Date().toLocaleString()}`
+  );
+
+  doc.end();
 });
 
 app.get("/manager/priority-queue", requireAuth, requireManager, async (req, res) => {
