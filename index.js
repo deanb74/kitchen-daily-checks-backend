@@ -649,6 +649,89 @@ app.get("/manager/shifts", requireAuth, requireManager, async (req, res) => {
   res.json(shifts);
 });
 
+app.get("/manager/areas", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const areas = await prisma.area.findMany({
+      where: { siteId },
+      orderBy: { id: "asc" },
+    });
+
+    res.json(areas);
+  } catch (error) {
+    console.error("GET AREAS ERROR:", error);
+    res.status(500).json({ error: "Could not load areas" });
+  }
+});
+
+app.post("/manager/areas", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+    const { name, category } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Area name is required" });
+    }
+
+    const area = await prisma.area.create({
+      data: {
+        siteId,
+        name,
+        category: category || null,
+      },
+    });
+
+    res.json(area);
+  } catch (error) {
+    console.error("CREATE AREA ERROR:", error);
+    res.status(400).json({ error: "Could not create area" });
+  }
+});
+
+app.get("/manager/equipment", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const equipment = await prisma.equipment.findMany({
+      where: { siteId },
+      include: { area: true },
+      orderBy: { id: "asc" },
+    });
+
+    res.json(equipment);
+  } catch (error) {
+    console.error("GET EQUIPMENT ERROR:", error);
+    res.status(500).json({ error: "Could not load equipment" });
+  }
+});
+
+app.post("/manager/equipment", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+    const { name, type, areaId } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Equipment name is required" });
+    }
+
+    const equipment = await prisma.equipment.create({
+      data: {
+        siteId,
+        name,
+        type: type || null,
+        areaId: areaId ? Number(areaId) : null,
+      },
+      include: { area: true },
+    });
+
+    res.json(equipment);
+  } catch (error) {
+    console.error("CREATE EQUIPMENT ERROR:", error);
+    res.status(400).json({ error: "Could not create equipment" });
+  }
+});
+
 app.post("/manager/sites", requireAuth, requireManager, async (req, res) => {
   const { name } = req.body;
 
