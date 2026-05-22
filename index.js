@@ -1334,7 +1334,11 @@ app.post("/manager/task-templates/apply", requireAuth, requireManager, async (re
     res.json(task);
   } catch (error) {
     console.error("APPLY TEMPLATE ERROR:", error);
-    res.status(400).json({ error: "Could not apply template" });
+
+    res.status(400).json({
+      error: "Could not apply template",
+      details: error?.message || String(error),
+    });
   }
 });
 
