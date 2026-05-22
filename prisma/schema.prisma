@@ -32,6 +32,10 @@ model User {
   email     String  @unique
   password  String
   role      String  @default("staff")
+  firstName   String?
+  lastName    String?
+  displayName String?
+  jobTitle    String?
   pushToken String?
   department String?
   regionId   Int?
