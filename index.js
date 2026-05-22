@@ -732,6 +732,23 @@ app.post("/manager/equipment", requireAuth, requireManager, async (req, res) => 
   }
 });
 
+app.post("/manager/equipment/:id/area", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+  const { areaId } = req.body;
+
+  const equipment = await prisma.equipment.updateMany({
+    where: {
+      id: Number(req.params.id),
+      siteId,
+    },
+    data: {
+      areaId: areaId ? Number(areaId) : null,
+    },
+  });
+
+  res.json({ success: true, equipment });
+});
+
 app.post("/manager/sites", requireAuth, requireManager, async (req, res) => {
   const { name } = req.body;
 
@@ -1237,6 +1254,10 @@ app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) =
 
 app.get("/manager/task-templates", requireAuth, requireManager, async (_req, res) => {
   const templates = await prisma.taskTemplate.findMany({
+    include: {
+      area: true,
+      equipment: true,
+    },
     orderBy: { id: "asc" },
   });
 
@@ -1244,7 +1265,20 @@ app.get("/manager/task-templates", requireAuth, requireManager, async (_req, res
 });
 
 app.post("/manager/task-templates", requireAuth, requireManager, async (req, res) => {
-  const { name, department, frequency, autoCreate, schedule } = req.body;
+  const {
+    name,
+    department,
+    frequency,
+    areaId,
+    equipmentId,
+    venueType,
+    autoCreate,
+    schedule,
+    safeMethodId,
+    verificationRequired,
+    managerSignoffRequired,
+    correctiveActionPrompt,
+  } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: "Template name is required" });
@@ -1255,8 +1289,15 @@ app.post("/manager/task-templates", requireAuth, requireManager, async (req, res
       name,
       department: department || "kitchen",
       frequency: frequency || "daily",
+      areaId: areaId ? Number(areaId) : null,
+      equipmentId: equipmentId ? Number(equipmentId) : null,
+      venueType: venueType || null,
       autoCreate: Boolean(autoCreate),
       schedule: schedule || null,
+      safeMethodId: safeMethodId ? Number(safeMethodId) : null,
+      verificationRequired: Boolean(verificationRequired),
+      managerSignoffRequired: Boolean(managerSignoffRequired),
+      correctiveActionPrompt: correctiveActionPrompt || null,
     },
   });
 
@@ -1279,13 +1320,18 @@ app.post("/manager/task-templates/apply", requireAuth, requireManager, async (re
       return res.status(404).json({ error: "Template not found" });
     }
 
+    const today = new Date();
+
     const task = await prisma.task.create({
       data: {
         name: template.name,
         department: template.department,
         frequency: template.frequency,
+        templateId: template.id,
+        taskDate: today,
+        dueAt: buildDueAt(today, template.dueHour, template.dueMinute),
         assignedUserId: Number(assignedUserId),
-        siteId: Number(siteId || req.currentUser.siteId),
+        siteId: req.currentUser.siteId,
       },
     });
 
@@ -2026,7 +2072,31 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
           continue;
         }
 
-          const dueAt = buildDueAt(today, template.dueHour, template.dueMinute);
+        if (template.areaId) {
+          const area = await prisma.area.findFirst({
+            where: {
+              id: template.areaId,
+              siteId: user.siteId,
+              active: true,
+            },
+          });
+
+          if (!area) continue;
+        }
+
+        if (template.equipmentId) {
+          const equipment = await prisma.equipment.findFirst({
+            where: {
+              id: template.equipmentId,
+              siteId: user.siteId,
+              active: true,
+            },
+          });
+
+          if (!equipment) continue;
+        }
+
+        const dueAt = buildDueAt(today, template.dueHour, template.dueMinute);
 
         const task = await prisma.task.create({
           data: {
@@ -2037,7 +2107,7 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
             taskDate: today,
             assignedUserId: user.id,
             siteId: user.siteId,
-              dueAt,
+            dueAt,
           },
         });
 
