@@ -280,7 +280,7 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       where: {
         id,
         assignedUserId: req.currentUser.id,
-        siteId: req.currentUser.siteId,
+        siteId: assignedUser.siteId || req.currentUser.siteId,
       },
     });
 
@@ -1317,6 +1317,14 @@ app.post("/manager/task-templates/apply", requireAuth, requireManager, async (re
     }
 
     const today = new Date().toISOString().slice(0, 10);
+
+    const assignedUser = await prisma.user.findUnique({
+      where: { id: Number(assignedUserId) },
+    });
+
+    if (!assignedUser) {
+      return res.status(404).json({ error: "Assigned user not found" });
+    }
 
     const task = await prisma.task.create({
       data: {
