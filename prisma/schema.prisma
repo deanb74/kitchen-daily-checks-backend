@@ -10,6 +10,7 @@ datasource db {
 model Site {
   id              Int              @id @default(autoincrement())
   name            String           @unique
+  venueType       String?
   resetHour       Int              @default(5)
   resetMinute     Int              @default(0)
   resetEnabled    Boolean          @default(true)
@@ -21,6 +22,8 @@ model Site {
   tasks           Task[]
   temperatureLogs TemperatureLog[]
   resetLogs       ResetLog[]
+  areas           Area[]
+  equipment       Equipment[]
 }
 
 model User {
@@ -84,6 +87,9 @@ model TaskTemplate {
   name        String
   department  String  @default("kitchen")
   frequency   String  @default("daily")
+  areaId      Int?
+  equipmentId Int?
+  venueType   String?
   autoCreate  Boolean @default(false)
   schedule    String?
   dueHour     Int?
@@ -130,4 +136,28 @@ model ComplianceRecord {
   verified         Boolean  @default(false)
 
   createdAt        DateTime @default(now())
+}
+
+model Area {
+  id        Int         @id @default(autoincrement())
+  siteId    Int
+  name      String
+  category  String?
+  active    Boolean     @default(true)
+
+  site      Site        @relation(fields: [siteId], references: [id])
+  equipment Equipment[]
+}
+
+model Equipment {
+  id      Int     @id @default(autoincrement())
+  siteId  Int
+  areaId  Int?
+
+  name    String
+  type    String?
+  active  Boolean @default(true)
+
+  site    Site  @relation(fields: [siteId], references: [id])
+  area    Area? @relation(fields: [areaId], references: [id])
 }
