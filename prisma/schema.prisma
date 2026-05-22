@@ -24,6 +24,7 @@ model Site {
   resetLogs       ResetLog[]
   areas           Area[]
   equipment       Equipment[]
+  documents       SiteDocument[]
 }
 
 model User {
@@ -160,4 +161,25 @@ model Equipment {
 
   site    Site  @relation(fields: [siteId], references: [id])
   area    Area? @relation(fields: [areaId], references: [id])
+}
+
+model SiteDocument {
+  id           Int      @id @default(autoincrement())
+  siteId       Int
+
+  title        String
+  type         String?
+  language     String?
+
+  fileUrl      String?
+  thumbnailUrl String?
+
+  source       String?  // upload, photo, generated
+  status       String?  // stored, pending_ocr, imported
+
+  createdById  Int?
+
+  createdAt    DateTime @default(now())
+
+  site         Site @relation(fields: [siteId], references: [id])
 }
