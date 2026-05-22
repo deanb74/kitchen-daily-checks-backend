@@ -88,6 +88,12 @@ model TaskTemplate {
   schedule    String?
   dueHour     Int?
   dueMinute   Int?
+  safeMethodId            Int?
+  verificationRequired    Boolean @default(false)
+  managerSignoffRequired  Boolean @default(false)
+  correctiveActionPrompt  String?
+
+  safeMethod              SafeMethod? @relation(fields: [safeMethodId], references: [id])
 }
 
 model Shift {
@@ -98,4 +104,30 @@ model Shift {
   startedAt      DateTime  @default(now())
   endedAt        DateTime?
   handoverNotes  String?
+}
+
+model SafeMethod {
+  id            Int            @id @default(autoincrement())
+  title         String
+  category      String
+  description   String?
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+
+  taskTemplates TaskTemplate[]
+}
+
+model ComplianceRecord {
+  id               Int      @id @default(autoincrement())
+  taskId           Int?
+  userId           Int
+  siteId           Int?
+
+  type             String
+  value            String?
+  notes            String?
+  correctiveAction String?
+  verified         Boolean  @default(false)
+
+  createdAt        DateTime @default(now())
 }
