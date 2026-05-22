@@ -1254,10 +1254,6 @@ app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) =
 
 app.get("/manager/task-templates", requireAuth, requireManager, async (_req, res) => {
   const templates = await prisma.taskTemplate.findMany({
-    include: {
-      area: true,
-      equipment: true,
-    },
     orderBy: { id: "asc" },
   });
 
