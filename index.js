@@ -1316,7 +1316,7 @@ app.post("/manager/task-templates/apply", requireAuth, requireManager, async (re
       return res.status(404).json({ error: "Template not found" });
     }
 
-    const today = new Date();
+    const today = new Date().toISOString().slice(0, 10);
 
     const task = await prisma.task.create({
       data: {
