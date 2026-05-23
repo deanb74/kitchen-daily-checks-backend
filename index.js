@@ -629,7 +629,7 @@ app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => 
   });
 });
 
-app.get("/staff/corrective-actions", requireAuth, async (req, res) => {
+app.get("/staff/corrective-actions", requireAuth, attachCurrentUser, async (req, res) => {
   try {
     const records = await prisma.complianceRecord.findMany({
       where: {
