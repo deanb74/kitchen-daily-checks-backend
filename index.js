@@ -319,6 +319,19 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       });
     }
 
+    await prisma.complianceRecord.updateMany({
+      where: {
+        taskId: Number(req.params.id),
+        correctiveAction: { not: null },
+        verified: false,
+      },
+      data: {
+        verified: true,
+        verifiedById: req.currentUser.id,
+        verifiedAt: new Date(),
+      },
+    });
+
     res.json({
       success: true,
       alreadyCompleted: false,
