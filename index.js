@@ -281,7 +281,7 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       where: {
         id,
         assignedUserId: req.currentUser.id,
-        siteId: assignedUser.siteId || req.currentUser.siteId,
+        siteId: completedTask.siteId || req.currentUser.siteId || null,
       },
     });
 
