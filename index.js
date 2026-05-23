@@ -679,10 +679,47 @@ app.post("/manager/compliance-records/:id/verify", requireAuth, requireManager, 
     where: { id: Number(req.params.id) },
     data: {
       verified: true,
+      verifiedById: req.currentUser.id,
+      verifiedAt: new Date(),
     },
   });
 
   res.json(record);
+});
+
+app.post("/manager/compliance-records/:id/corrective-action", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+    const { correctiveAction } = req.body;
+
+    if (!correctiveAction) {
+      return res.status(400).json({ error: "Corrective action is required" });
+    }
+
+    const existing = await prisma.complianceRecord.findFirst({
+      where: {
+        id: Number(req.params.id),
+        siteId,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Compliance record not found" });
+    }
+
+    const record = await prisma.complianceRecord.update({
+      where: { id: existing.id },
+      data: {
+        verified: false,
+        correctiveAction,
+      },
+    });
+
+    res.json(record);
+  } catch (error) {
+    console.error("CORRECTIVE ACTION ERROR:", error);
+    res.status(500).json({ error: "Could not request corrective action" });
+  }
 });
 
 app.get("/manager/areas", requireAuth, requireManager, async (req, res) => {
