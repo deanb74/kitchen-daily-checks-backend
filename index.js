@@ -274,6 +274,7 @@ app.get("/tasks", requireAuth, attachCurrentUser, async (req, res) => {
 
 app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res) => {
   const id = Number(req.params.id);
+  const { note } = req.body;
 
   try {
     const existingTask = await prisma.task.findFirst({
@@ -305,6 +306,18 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
         completedByEmail: req.currentUser.email,
       },
     });
+
+    if (note) {
+      await prisma.complianceRecord.create({
+        data: {
+          taskId: Number(req.params.id),
+          userId: req.currentUser.id,
+          siteId: req.currentUser.siteId,
+          type: "task_completion_note",
+          notes: note,
+        },
+      });
+    }
 
     res.json({
       success: true,
