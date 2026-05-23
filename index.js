@@ -748,6 +748,19 @@ app.post("/manager/compliance-records/:id/corrective-action", requireAuth, requi
       },
     });
 
+    await prisma.task.update({
+      where: { id: existing.taskId },
+      data: {
+        completed: false,
+        completedAt: null,
+        completedById: null,
+        completedByEmail: null,
+        escalationLevel: {
+          increment: 1,
+        },
+      },
+    });
+
     res.json(record);
   } catch (error) {
     console.error("CORRECTIVE ACTION ERROR:", error);
