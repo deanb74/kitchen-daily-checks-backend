@@ -674,6 +674,17 @@ app.get("/manager/compliance-records", requireAuth, requireManager, async (req, 
   res.json(records);
 });
 
+app.post("/manager/compliance-records/:id/verify", requireAuth, requireManager, async (req, res) => {
+  const record = await prisma.complianceRecord.update({
+    where: { id: Number(req.params.id) },
+    data: {
+      verified: true,
+    },
+  });
+
+  res.json(record);
+});
+
 app.get("/manager/areas", requireAuth, requireManager, async (req, res) => {
   try {
     const siteId = getManagerSiteId(req);
