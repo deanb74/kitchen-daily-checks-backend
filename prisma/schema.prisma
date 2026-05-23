@@ -65,6 +65,7 @@ model Task {
   lastEscalatedAt    DateTime?
   completedById      Int?
   completedByEmail   String?
+  complianceRecords  ComplianceRecord[]
 }
 
 model TemperatureLog {
@@ -131,6 +132,7 @@ model SafeMethod {
 model ComplianceRecord {
   id               Int      @id @default(autoincrement())
   taskId           Int?
+  task             Task?    @relation(fields: [taskId], references: [id])
   userId           Int
   siteId           Int?
 
@@ -139,6 +141,8 @@ model ComplianceRecord {
   notes            String?
   correctiveAction String?
   verified         Boolean  @default(false)
+  verifiedById     Int?
+  verifiedAt       DateTime?
 
   createdAt        DateTime @default(now())
 }

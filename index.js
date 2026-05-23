@@ -630,17 +630,36 @@ app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => 
 });
 
 app.get("/staff/corrective-actions", requireAuth, async (req, res) => {
-  const records = await prisma.complianceRecord.findMany({
-    where: {
-      userId: req.currentUser.id,
-      correctiveAction: { not: null },
-      verified: false,
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  try {
+    const records = await prisma.complianceRecord.findMany({
+      where: {
+        siteId: req.currentUser.siteId,
+        correctiveAction: { not: null },
+        verified: false,
+        OR: [
+          { userId: req.currentUser.id },
+          {
+            task: {
+              assignedUserId: req.currentUser.id,
+            },
+          },
+        ],
+      },
+      include: {
+        task: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
 
-  res.json(records);
+    res.json(records);
+  } catch (error) {
+    console.error("STAFF CORRECTIVE ACTIONS ERROR:", error);
+    res.status(500).json({
+      error: "Could not load corrective actions",
+      details: error.message,
+    });
+  }
 });
 
 app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
