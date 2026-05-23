@@ -281,7 +281,7 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       where: {
         id,
         assignedUserId: req.currentUser.id,
-        siteId: completedTask.siteId || req.currentUser.siteId || null,
+        siteId: req.currentUser.siteId || null,
       },
     });
 
@@ -297,8 +297,8 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
       });
     }
 
-    const task = await prisma.task.update({
-      where: { id },
+    const completedTask = await prisma.task.update({
+      where: { id: Number(req.params.id) },
       data: {
         completed: true,
         completedAt: new Date(),
@@ -312,7 +312,7 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
         data: {
           taskId: Number(req.params.id),
           userId: req.currentUser.id,
-          siteId: req.currentUser.siteId,
+          siteId: completedTask.siteId || req.currentUser.siteId || null,
           type: "task_completion_note",
           notes: note,
         },
@@ -322,7 +322,7 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
     res.json({
       success: true,
       alreadyCompleted: false,
-      task,
+      task: completedTask,
     });
   } catch (error) {
     console.error("COMPLETE TASK ERROR:", error);
