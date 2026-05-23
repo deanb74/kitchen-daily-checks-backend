@@ -662,6 +662,18 @@ app.get("/manager/shifts", requireAuth, requireManager, async (req, res) => {
   res.json(shifts);
 });
 
+app.get("/manager/compliance-records", requireAuth, requireManager, async (req, res) => {
+  const siteId = getManagerSiteId(req);
+
+  const records = await prisma.complianceRecord.findMany({
+    where: { siteId },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+
+  res.json(records);
+});
+
 app.get("/manager/areas", requireAuth, requireManager, async (req, res) => {
   try {
     const siteId = getManagerSiteId(req);
