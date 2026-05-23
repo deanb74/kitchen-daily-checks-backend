@@ -629,6 +629,20 @@ app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => 
   });
 });
 
+app.get("/staff/corrective-actions", requireAuth, async (req, res) => {
+  const records = await prisma.complianceRecord.findMany({
+    where: {
+      userId: req.currentUser.id,
+      correctiveAction: { not: null },
+      verified: false,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  res.json(records);
+});
+
 app.get("/manager/users", requireAuth, requireManager, async (req, res) => {
   const users = await prisma.user.findMany({
     include: {
