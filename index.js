@@ -1,3 +1,64 @@
+app.get("/manager/training-insights", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const records = await prisma.complianceRecord.findMany({
+      where: {
+        siteId,
+        correctiveAction: { not: null },
+      },
+      include: {
+        task: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const byStaff = {};
+    const byTask = {};
+    const recommendations = [];
+
+    for (const record of records) {
+      const staffKey = String(record.userId);
+      const taskName = record.task?.name || `Task ${record.taskId}`;
+
+      byStaff[staffKey] = (byStaff[staffKey] || 0) + 1;
+      byTask[taskName] = (byTask[taskName] || 0) + 1;
+    }
+
+    for (const [userId, count] of Object.entries(byStaff)) {
+      if (count >= 2) {
+        recommendations.push({
+          type: "staff_training",
+          severity: count >= 4 ? "high" : "medium",
+          title: `User ${userId} may need coaching`,
+          message: `This staff member has received ${count} corrective actions.`,
+          userId: Number(userId),
+        });
+      }
+    }
+
+    for (const [taskName, count] of Object.entries(byTask)) {
+      if (count >= 2) {
+        recommendations.push({
+          type: "task_sop_review",
+          severity: count >= 4 ? "high" : "medium",
+          title: `${taskName} may need clearer instructions`,
+          message: `This task has generated ${count} corrective actions.`,
+          taskName,
+        });
+      }
+    }
+
+    res.json({
+      totalCorrectiveActions: records.length,
+      recommendationCount: recommendations.length,
+      recommendations,
+    });
+  } catch (error) {
+    console.error("TRAINING INSIGHTS ERROR:", error);
+    res.status(500).json({ error: "Could not load training insights" });
+  }
+});
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import cors from "cors";
