@@ -720,6 +720,50 @@ app.get("/manager/compliance-records", requireAuth, requireManager, async (req, 
   res.json(records);
 });
 
+app.get("/manager/corrective-dashboard", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const records = await prisma.complianceRecord.findMany({
+      where: {
+        siteId,
+        correctiveAction: { not: null },
+      },
+      include: {
+        task: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    const openCount = records.filter((r) => !r.verified).length;
+    const resolvedCount = records.filter((r) => r.verified).length;
+
+    const repeatFailures = records.reduce((acc, record) => {
+      const key = record.task?.name || `Task ${record.taskId}`;
+
+      acc[key] = (acc[key] || 0) + 1;
+
+      return acc;
+    }, {});
+
+    res.json({
+      openCount,
+      resolvedCount,
+      total: records.length,
+      repeatFailures,
+      records,
+    });
+  } catch (error) {
+    console.error("CORRECTIVE DASHBOARD ERROR:", error);
+
+    res.status(500).json({
+      error: "Could not load corrective dashboard",
+    });
+  }
+});
+
 app.post("/manager/compliance-records/:id/verify", requireAuth, requireManager, async (req, res) => {
   const record = await prisma.complianceRecord.update({
     where: { id: Number(req.params.id) },
