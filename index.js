@@ -740,11 +740,38 @@ app.get("/manager/corrective-dashboard", requireAuth, requireManager, async (req
     const openCount = records.filter((r) => !r.verified).length;
     const resolvedCount = records.filter((r) => r.verified).length;
 
+    // Staff/Task/Department intelligence
+    const byTask = {};
+    const byStaff = {};
+    const byDepartment = {};
+
+    for (const record of records) {
+      const taskName = record.task?.name || `Task ${record.taskId}`;
+      const staffKey = String(record.userId);
+      const department = record.task?.department || "unknown";
+
+      byTask[taskName] = (byTask[taskName] || 0) + 1;
+      byStaff[staffKey] = (byStaff[staffKey] || 0) + 1;
+      byDepartment[department] = (byDepartment[department] || 0) + 1;
+    }
+
+    const topFailingTasks = Object.entries(byTask)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const topStaffCorrectiveActions = Object.entries(byStaff)
+      .map(([userId, count]) => ({ userId: Number(userId), count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const topDepartments = Object.entries(byDepartment)
+      .map(([department, count]) => ({ department, count }))
+      .sort((a, b) => b.count - a.count);
+
     const repeatFailures = records.reduce((acc, record) => {
       const key = record.task?.name || `Task ${record.taskId}`;
-
       acc[key] = (acc[key] || 0) + 1;
-
       return acc;
     }, {});
 
@@ -754,6 +781,9 @@ app.get("/manager/corrective-dashboard", requireAuth, requireManager, async (req
       total: records.length,
       repeatFailures,
       records,
+      topFailingTasks,
+      topStaffCorrectiveActions,
+      topDepartments,
     });
   } catch (error) {
     console.error("CORRECTIVE DASHBOARD ERROR:", error);
