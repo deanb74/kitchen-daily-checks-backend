@@ -1,3 +1,5 @@
+// ...existing imports and app setup...
+// Place after app setup and near other manager routes
 app.get("/manager/training-insights", requireAuth, requireManager, async (req, res) => {
   try {
     const siteId = getManagerSiteId(req);
