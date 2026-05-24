@@ -274,7 +274,7 @@ app.get("/tasks", requireAuth, attachCurrentUser, async (req, res) => {
 
 app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res) => {
   const id = Number(req.params.id);
-  const { note } = req.body;
+  const { note, correctionResponse } = req.body;
 
   try {
     const existingTask = await prisma.task.findFirst({
@@ -315,6 +315,23 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
           siteId: completedTask.siteId || req.currentUser.siteId || null,
           type: "task_completion_note",
           notes: note,
+        },
+      });
+    }
+
+
+    // Store correction response as a separate compliance record if provided
+    if (correctionResponse) {
+      await prisma.complianceRecord.create({
+        data: {
+          taskId: completedTask.id,
+          userId: req.currentUser.id,
+          siteId: completedTask.siteId || req.currentUser.siteId || null,
+          type: "corrective_resolution_note",
+          notes: correctionResponse,
+          verified: true,
+          verifiedById: req.currentUser.id,
+          verifiedAt: new Date(),
         },
       });
     }
