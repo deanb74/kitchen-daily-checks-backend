@@ -2809,3 +2809,26 @@ app.post("/manager/template-packs/:packId/import", requireAuth, requireManager, 
 
   res.json({ success: true, created });
 });
+
+app.get("/manager/equipment-status", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const equipment = await prisma.equipment.findMany({
+      where: { siteId },
+      include: { area: true },
+      orderBy: { id: "asc" },
+    });
+
+    const summary = {
+      total: equipment.length,
+      faultReported: equipment.filter((item) => item.faultReported).length,
+      outOfService: equipment.filter((item) => item.outOfService).length,
+    };
+
+    res.json({ summary, equipment });
+  } catch (error) {
+    console.error("EQUIPMENT STATUS ERROR:", error);
+    res.status(500).json({ error: "Could not load equipment status" });
+  }
+});
