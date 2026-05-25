@@ -1,3 +1,6 @@
+// ...existing imports...
+// Place after app and middleware declarations
+// Equipment fault reporting route
 app.post("/equipment/:id/report-fault", requireAuth, async (req, res) => {
   try {
     const equipment = await prisma.equipment.update({
