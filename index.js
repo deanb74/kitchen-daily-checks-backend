@@ -1,3 +1,38 @@
+app.post("/equipment/:id/report-fault", requireAuth, async (req, res) => {
+  try {
+    const equipment = await prisma.equipment.update({
+      where: {
+        id: Number(req.params.id),
+      },
+      data: {
+        faultReported: true,
+        outOfService: true,
+        faultNotes: req.body.notes || null,
+      },
+    });
+
+    await prisma.complianceRecord.create({
+      data: {
+        siteId: equipment.siteId,
+        userId: req.currentUser.id,
+        type: "equipment_fault",
+        notes: req.body.notes || "Equipment fault reported",
+        verified: false,
+      },
+    });
+
+    res.json({
+      success: true,
+      equipment,
+    });
+  } catch (error) {
+    console.error("REPORT EQUIPMENT FAULT ERROR:", error);
+
+    res.status(500).json({
+      error: "Could not report equipment fault",
+    });
+  }
+});
 
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -454,8 +489,21 @@ app.post("/shift/start", requireAuth, attachCurrentUser, async (req, res) => {
     const created = [];
     const skipped = [];
 
+
     for (const template of templates) {
       if (!shouldGenerateTemplate(template)) continue;
+
+      // Skip if equipment-linked template and equipment does not exist/active at site
+      if (template.equipmentId) {
+        const equipment = await prisma.equipment.findFirst({
+          where: {
+            id: template.equipmentId,
+            siteId: user.siteId,
+            active: true,
+          },
+        });
+        if (!equipment) continue;
+      }
 
       const existing = await prisma.task.findFirst({
         where: {
