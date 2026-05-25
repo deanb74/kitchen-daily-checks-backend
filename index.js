@@ -2824,9 +2824,21 @@ app.get("/manager/equipment-status", requireAuth, requireManager, async (req, re
       total: equipment.length,
       faultReported: equipment.filter((item) => item.faultReported).length,
       outOfService: equipment.filter((item) => item.outOfService).length,
+      cleaningDue,
+      maintenanceDue,
     };
 
-    res.json({ summary, equipment });
+    const now = new Date();
+
+    const cleaningDue = equipment.filter(
+      (item) => item.nextCleaningDueAt && new Date(item.nextCleaningDueAt) <= now
+    ).length;
+
+    const maintenanceDue = equipment.filter(
+      (item) => item.nextMaintenanceDueAt && new Date(item.nextMaintenanceDueAt) <= now
+    ).length;
+
+    res.json({ summary, equipment, cleaningDue, maintenanceDue });
   } catch (error) {
     console.error("EQUIPMENT STATUS ERROR:", error);
     res.status(500).json({ error: "Could not load equipment status" });
