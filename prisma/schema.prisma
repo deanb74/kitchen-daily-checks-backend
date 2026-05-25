@@ -105,6 +105,8 @@ model TaskTemplate {
   managerSignoffRequired  Boolean @default(false)
   correctiveActionPrompt  String?
 
+  instructions String?
+  ppeRequired  String?
   safeMethod              SafeMethod? @relation(fields: [safeMethodId], references: [id])
 }
 
@@ -166,6 +168,12 @@ model Equipment {
   name    String
   type    String?
   active  Boolean @default(true)
+
+  faultReported      Boolean   @default(false)
+  faultNotes         String?
+  outOfService       Boolean   @default(false)
+  lastMaintenanceAt  DateTime?
+  lastCleanedAt      DateTime?
 
   site    Site  @relation(fields: [siteId], references: [id])
   area    Area? @relation(fields: [areaId], references: [id])
