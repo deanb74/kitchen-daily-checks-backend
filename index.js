@@ -6,8 +6,6 @@ import jwt from "jsonwebtoken";
 import PDFDocument from "pdfkit";
 import { Resend } from "resend";
 
-const app = express();
-const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
@@ -2695,4 +2693,78 @@ const HOST = "0.0.0.0";
 
 app.listen(PORT, HOST, () => {
   console.log(`🚀 API running on http://${HOST}:${PORT}`);
+});
+
+// Hard-coded template packs
+const TEMPLATE_PACKS = [
+  {
+    id: "foh_opening",
+    name: "FoH Opening Pack",
+    templates: [
+      {
+        name: "Check toilets are clean and stocked",
+        department: "front_of_house",
+        schedule: "daily",
+        dueHour: 10,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+      {
+        name: "Check bar is clean and ready",
+        department: "front_of_house",
+        schedule: "daily",
+        dueHour: 10,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+    ],
+  },
+  {
+    id: "kitchen_cleaning",
+    name: "Kitchen SFBB Cleaning Pack",
+    templates: [
+      {
+        name: "Clean work surfaces",
+        department: "kitchen",
+        schedule: "daily",
+        dueHour: 11,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+      {
+        name: "Clean fridges and freezers",
+        department: "kitchen",
+        schedule: "weekly",
+        dueHour: 11,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+    ],
+  },
+];
+
+// Template Packs routes
+app.get("/manager/template-packs", requireAuth, requireManager, (_req, res) => {
+  res.json(TEMPLATE_PACKS);
+});
+
+app.post("/manager/template-packs/:packId/import", requireAuth, requireManager, async (req, res) => {
+  const pack = TEMPLATE_PACKS.find((item) => item.id === req.params.packId);
+
+  if (!pack) {
+    return res.status(404).json({ error: "Template pack not found" });
+  }
+
+  const created = [];
+
+  for (const template of pack.templates) {
+    const newTemplate = await prisma.taskTemplate.create({
+      data: {
+        ...template,
+      },
+    });
+    created.push(newTemplate);
+  }
+
+  res.json({ success: true, created });
 });
