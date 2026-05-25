@@ -1,7 +1,24 @@
-// ...existing imports...
-// Place after app and middleware declarations
-// Equipment fault reporting route
-app.post("/equipment/:id/report-fault", requireAuth, async (req, res) => {
+import { PrismaClient } from "@prisma/client";
+// Equipment fault reporting route (after app and middleware setup)
+import bcrypt from "bcryptjs";
+import cors from "cors";
+import express from "express";
+import jwt from "jsonwebtoken";
+import PDFDocument from "pdfkit";
+import { Resend } from "resend";
+
+const app = express();
+const prisma = new PrismaClient();
+
+app.use(cors());
+app.use(express.json());
+
+app.use((req, _res, next) => {
+  console.log("REQ", req.method, req.url);
+  next();
+});
+
+app.post("/equipment/:id/report-fault", requireAuth, attachCurrentUser, async (req, res) => {
   try {
     const equipment = await prisma.equipment.update({
       where: {
@@ -35,25 +52,6 @@ app.post("/equipment/:id/report-fault", requireAuth, async (req, res) => {
       error: "Could not report equipment fault",
     });
   }
-});
-
-import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
-import cors from "cors";
-import express from "express";
-import jwt from "jsonwebtoken";
-import PDFDocument from "pdfkit";
-import { Resend } from "resend";
-
-const app = express();
-const prisma = new PrismaClient();
-
-app.use(cors());
-app.use(express.json());
-
-app.use((req, _res, next) => {
-  console.log("REQ", req.method, req.url);
-  next();
 });
 
 // ...other routes and middleware...
