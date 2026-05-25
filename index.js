@@ -1,3 +1,4 @@
+
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import cors from "cors";
@@ -6,6 +7,8 @@ import jwt from "jsonwebtoken";
 import PDFDocument from "pdfkit";
 import { Resend } from "resend";
 
+const app = express();
+const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
@@ -78,17 +81,6 @@ app.get("/manager/training-insights", requireAuth, requireManager, async (req, r
     console.error("TRAINING INSIGHTS ERROR:", error);
     res.status(500).json({ error: "Could not load training insights" });
   }
-});
-
-const app = express();
-const prisma = new PrismaClient();
-
-app.use(cors());
-app.use(express.json());
-
-app.use((req, _res, next) => {
-  console.log("REQ", req.method, req.url);
-  next();
 });
 
 app.get("/health", (_req, res) => {
