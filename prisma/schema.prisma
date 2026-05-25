@@ -172,8 +172,12 @@ model Equipment {
   faultReported      Boolean   @default(false)
   faultNotes         String?
   outOfService       Boolean   @default(false)
-  lastMaintenanceAt  DateTime?
-  lastCleanedAt      DateTime?
+  lastMaintenanceAt      DateTime?
+  lastCleanedAt          DateTime?
+  cleaningIntervalDays     Int?
+  maintenanceIntervalDays  Int?
+  nextCleaningDueAt        DateTime?
+  nextMaintenanceDueAt     DateTime?
 
   site    Site  @relation(fields: [siteId], references: [id])
   area    Area? @relation(fields: [areaId], references: [id])
