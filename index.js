@@ -371,7 +371,30 @@ app.get("/tasks", requireAuth, attachCurrentUser, async (req, res) => {
     orderBy: { id: "asc" },
   });
 
-  res.json(tasks);
+  const equipmentIds = [
+    ...new Set(tasks.map((task) => task.equipmentId).filter(Boolean)),
+  ];
+
+  const outOfServiceEquipment = equipmentIds.length
+    ? await prisma.equipment.findMany({
+        where: {
+          id: { in: equipmentIds },
+          outOfService: true,
+        },
+        select: { id: true },
+      })
+    : [];
+
+  const outOfServiceEquipmentIds = new Set(
+    outOfServiceEquipment.map((equipment) => equipment.id)
+  );
+
+  const visibleTasks = tasks.filter((task) => {
+    if (!task.equipmentId) return true;
+    return !outOfServiceEquipmentIds.has(task.equipmentId);
+  });
+
+  res.json(visibleTasks);
 });
 
 app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res) => {
