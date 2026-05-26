@@ -911,6 +911,8 @@ app.post("/manager/venue-presets/:presetId/import", requireAuth, requireManager,
           const task = await prisma.task.create({
             data: {
               siteId,
+              areaId: newArea.id,
+              equipmentId: equipment.id,
               name: item.taskName || `Check ${item.name}`,
               department: area.department || area.category || "kitchen",
               frequency: item.frequency || "daily",
