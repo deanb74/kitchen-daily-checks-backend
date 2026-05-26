@@ -2841,22 +2841,114 @@ const VENUE_SETUP_PRESETS = [
   {
     id: "pub",
     name: "Pub",
-    departments: [
-      "front_of_house",
-      "kitchen",
-      "cellar",
-      "cleaning",
+
+    areas: [
+      {
+        name: "Main Bar",
+        category: "front_of_house",
+        department: "front_of_house",
+
+        equipment: [
+          {
+            name: "Main Glass Washer",
+            type: "glasswasher",
+            cleaningIntervalDays: 1,
+            maintenanceIntervalDays: 30,
+            taskName: "Clean glass washer",
+            frequency: "daily",
+          },
+
+          {
+            name: "Bottle Fridge 1",
+            type: "bottle_fridge",
+            cleaningIntervalDays: 7,
+            maintenanceIntervalDays: 30,
+            taskName: "Check bottle fridge temperature",
+            frequency: "daily",
+          },
+
+          {
+            name: "Ice Machine",
+            type: "ice_machine",
+            cleaningIntervalDays: 7,
+            maintenanceIntervalDays: 30,
+            taskName: "Clean ice machine",
+            frequency: "weekly",
+          },
+
+          {
+            name: "Coffee Machine",
+            type: "coffee_machine",
+            cleaningIntervalDays: 1,
+            maintenanceIntervalDays: 30,
+            taskName: "Clean coffee machine",
+            frequency: "daily",
+          },
+        ],
+      },
+
+      {
+        name: "Kitchen",
+        category: "kitchen",
+        department: "kitchen",
+
+        equipment: [
+          {
+            name: "Walk-in Fridge",
+            type: "fridge",
+            cleaningIntervalDays: 7,
+            maintenanceIntervalDays: 30,
+            taskName: "Check walk-in fridge temperature",
+            frequency: "daily",
+          },
+
+          {
+            name: "Freezer",
+            type: "freezer",
+            cleaningIntervalDays: 7,
+            maintenanceIntervalDays: 30,
+            taskName: "Check freezer temperature",
+            frequency: "daily",
+          },
+        ],
+      },
+
+      {
+        name: "Cellar",
+        category: "cellar",
+        department: "cellar",
+
+        equipment: [
+          {
+            name: "Beer Cellar Cooling",
+            type: "beer_cellar",
+            cleaningIntervalDays: 30,
+            maintenanceIntervalDays: 90,
+            taskName: "Inspect cellar cooling",
+            frequency: "weekly",
+          },
+        ],
+      },
     ],
-    equipment: [
-      { type: "glasswasher", quantity: 1 },
-      { type: "bottle_fridge", quantity: 4 },
-      { type: "ice_machine", quantity: 1 },
-      { type: "beer_cellar", quantity: 1 },
-      { type: "coffee_machine", quantity: 1 },
-    ],
-    templatePackIds: [
-      "foh_opening",
-      "kitchen_cleaning",
+
+    tasks: [
+      {
+        name: "Check toilets are clean and stocked",
+        department: "front_of_house",
+        frequency: "daily",
+      },
+
+      {
+        name: "Complete opening checks",
+        department: "front_of_house",
+        frequency: "daily",
+      },
+
+      {
+        name: "Complete kitchen cleaning schedule",
+        department: "kitchen",
+        frequency: "daily",
+      },
     ],
   },
 
