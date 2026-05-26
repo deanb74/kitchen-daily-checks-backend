@@ -859,8 +859,97 @@ app.get("/manager/venue-presets", requireAuth, requireManager, (_req, res) => {
 });
 
 app.post("/manager/venue-presets/:presetId/import", requireAuth, requireManager, async (req, res) => {
-  // import logic here
-  res.status(501).json({ message: "Import logic not implemented yet." });
+  try {
+    const { presetId } = req.params;
+    const siteId = getManagerSiteId(req);
+
+    if (!siteId) {
+      return res.status(400).json({ error: "Manager is not assigned to a site" });
+    }
+
+    const preset = VENUE_SETUP_PRESETS.find((p) => p.id === presetId);
+
+    if (!preset) {
+      return res.status(404).json({ error: "Venue preset not found" });
+    }
+
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { venueType: preset.id },
+    });
+
+    const createdAreas = [];
+    const createdEquipment = [];
+    const createdTasks = [];
+
+    for (const area of preset.areas || []) {
+      const newArea = await prisma.area.create({
+        data: {
+          siteId,
+          name: area.name,
+          category: area.category || area.department || "general",
+        },
+      });
+
+      createdAreas.push(newArea);
+
+      for (const item of area.equipment || []) {
+        const equipment = await prisma.equipment.create({
+          data: {
+            siteId,
+            areaId: newArea.id,
+            name: item.name,
+            type: item.type || null,
+            cleaningIntervalDays: item.cleaningIntervalDays || null,
+            maintenanceIntervalDays: item.maintenanceIntervalDays || null,
+          },
+        });
+
+        createdEquipment.push(equipment);
+
+        if (item.createTask !== false) {
+          const task = await prisma.task.create({
+            data: {
+              siteId,
+              name: item.taskName || `Check ${item.name}`,
+              department: area.department || area.category || "kitchen",
+              frequency: item.frequency || "daily",
+            },
+          });
+
+          createdTasks.push(task);
+        }
+      }
+    }
+
+    for (const task of preset.tasks || []) {
+      const createdTask = await prisma.task.create({
+        data: {
+          siteId,
+          name: task.name,
+          department: task.department || "kitchen",
+          frequency: task.frequency || "daily",
+        },
+      });
+
+      createdTasks.push(createdTask);
+    }
+
+    res.json({
+      success: true,
+      message: `${preset.name} imported successfully`,
+      siteId,
+      venueType: preset.id,
+      created: {
+        areas: createdAreas.length,
+        equipment: createdEquipment.length,
+        tasks: createdTasks.length,
+      },
+    });
+  } catch (err) {
+    console.error("Venue preset import failed:", err);
+    res.status(500).json({ error: "Venue preset import failed" });
+  }
 });
 
 app.get("/manager/corrective-dashboard", requireAuth, requireManager, async (req, res) => {
