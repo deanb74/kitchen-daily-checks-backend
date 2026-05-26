@@ -2736,6 +2736,50 @@ app.listen(PORT, HOST, () => {
   console.log(`🚀 API running on http://${HOST}:${PORT}`);
 });
 
+// Hard-coded venue setup presets
+const VENUE_SETUP_PRESETS = [
+  {
+    id: "pub",
+    name: "Pub",
+    departments: [
+      "front_of_house",
+      "kitchen",
+      "cellar",
+      "cleaning",
+    ],
+    equipment: [
+      { type: "glasswasher", quantity: 1 },
+      { type: "bottle_fridge", quantity: 4 },
+      { type: "ice_machine", quantity: 1 },
+      { type: "beer_cellar", quantity: 1 },
+      { type: "coffee_machine", quantity: 1 },
+    ],
+    templatePackIds: [
+      "foh_opening",
+      "kitchen_cleaning",
+    ],
+  },
+
+  {
+    id: "chip_shop",
+    name: "Chip Shop",
+    departments: [
+      "kitchen",
+      "front_of_house",
+      "cleaning",
+    ],
+    equipment: [
+      { type: "fryer", quantity: 3 },
+      { type: "freezer", quantity: 2 },
+      { type: "hot_holding", quantity: 1 },
+      { type: "extraction", quantity: 1 },
+    ],
+    templatePackIds: [
+      "kitchen_cleaning",
+    ],
+  },
+];
+
 // Hard-coded template packs
 const TEMPLATE_PACKS = [
   {
