@@ -840,6 +840,7 @@ app.get("/manager/shifts", requireAuth, requireManager, async (req, res) => {
   res.json(shifts);
 });
 
+
 app.get("/manager/compliance-records", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
 
@@ -850,6 +851,16 @@ app.get("/manager/compliance-records", requireAuth, requireManager, async (req, 
   });
 
   res.json(records);
+});
+
+// Venue setup presets routes
+app.get("/manager/venue-presets", requireAuth, requireManager, (_req, res) => {
+  res.json(VENUE_SETUP_PRESETS);
+});
+
+app.post("/manager/venue-presets/:presetId/import", requireAuth, requireManager, async (req, res) => {
+  // import logic here
+  res.status(501).json({ message: "Import logic not implemented yet." });
 });
 
 app.get("/manager/corrective-dashboard", requireAuth, requireManager, async (req, res) => {
