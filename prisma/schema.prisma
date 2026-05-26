@@ -54,6 +54,9 @@ model Task {
   taskDate       String?
   assignedUserId Int?
   assignedUser   User?     @relation(fields: [assignedUserId], references: [id])
+
+  areaId         Int?
+  equipmentId    Int?
   siteId         Int?
   site           Site?     @relation(fields: [siteId], references: [id])
 
