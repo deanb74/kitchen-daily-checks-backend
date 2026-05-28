@@ -3225,14 +3225,6 @@ app.get("/manager/equipment-status", requireAuth, requireManager, async (req, re
       orderBy: { id: "asc" },
     });
 
-    const summary = {
-      total: equipment.length,
-      faultReported: equipment.filter((item) => item.faultReported).length,
-      outOfService: equipment.filter((item) => item.outOfService).length,
-      cleaningDue,
-      maintenanceDue,
-    };
-
     const now = new Date();
 
     const cleaningDue = equipment.filter(
@@ -3242,6 +3234,14 @@ app.get("/manager/equipment-status", requireAuth, requireManager, async (req, re
     const maintenanceDue = equipment.filter(
       (item) => item.nextMaintenanceDueAt && new Date(item.nextMaintenanceDueAt) <= now
     ).length;
+
+    const summary = {
+      total: equipment.length,
+      faultReported: equipment.filter((item) => item.faultReported).length,
+      outOfService: equipment.filter((item) => item.outOfService).length,
+      cleaningDue,
+      maintenanceDue,
+    };
 
     res.json({ summary, equipment, cleaningDue, maintenanceDue });
   } catch (error) {
