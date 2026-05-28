@@ -16,6 +16,65 @@ app.use(express.json());
 app.use((req, _res, next) => {
   console.log("REQ", req.method, req.url);
   next();
+
+});
+
+app.get("/manager/suppressed-tasks", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const tasks = await prisma.task.findMany({
+      where: {
+        siteId,
+        equipmentId: { not: null },
+      },
+      orderBy: { id: "asc" },
+    });
+
+    const equipmentIds = [
+      ...new Set(tasks.map((task) => task.equipmentId).filter(Boolean)),
+    ];
+
+    const outOfServiceEquipment = equipmentIds.length
+      ? await prisma.equipment.findMany({
+          where: {
+            id: { in: equipmentIds },
+            outOfService: true,
+          },
+        })
+      : [];
+
+    const equipmentById = new Map(
+      outOfServiceEquipment.map((equipment) => [equipment.id, equipment])
+    );
+
+    const suppressedTasks = tasks
+      .filter((task) => equipmentById.has(task.equipmentId))
+      .map((task) => {
+        const equipment = equipmentById.get(task.equipmentId);
+
+        return {
+          taskId: task.id,
+          taskName: task.name,
+          department: task.department,
+          frequency: task.frequency,
+          equipmentId: equipment?.id || null,
+          equipmentName: equipment?.name || "Unknown equipment",
+          equipmentType: equipment?.type || null,
+          reason: "Equipment out of service",
+          faultNotes: equipment?.faultNotes || null,
+        };
+      });
+
+    res.json({
+      siteId,
+      count: suppressedTasks.length,
+      suppressedTasks,
+    });
+  } catch (err) {
+    console.error("SUPPRESSED TASKS ERROR:", err);
+    res.status(500).json({ error: "Could not load suppressed tasks" });
+  }
 });
 
 app.post("/equipment/:id/report-fault", requireAuth, attachCurrentUser, async (req, res) => {
