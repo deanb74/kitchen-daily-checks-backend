@@ -113,6 +113,48 @@ app.post("/equipment/:id/report-fault", requireAuth, attachCurrentUser, async (r
   }
 });
 
+
+app.post("/equipment/:id/return-to-service", requireAuth, attachCurrentUser, async (req, res) => {
+  try {
+    const equipmentId = Number(req.params.id);
+
+    if (!equipmentId || equipmentId <= 0) {
+      return res.status(400).json({ error: "Invalid equipment ID" });
+    }
+
+    const equipment = await prisma.equipment.update({
+      where: { id: equipmentId },
+      data: {
+        faultReported: false,
+        outOfService: false,
+        faultNotes: null,
+        lastMaintenanceAt: new Date(),
+      },
+    });
+
+    await prisma.complianceRecord.create({
+      data: {
+        siteId: equipment.siteId,
+        userId: req.currentUser.id,
+        type: "equipment_returned_to_service",
+        notes: req.body.notes || `${equipment.name} returned to service`,
+        verified: true,
+        verifiedById: req.currentUser.id,
+        verifiedAt: new Date(),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `${equipment.name} returned to service`,
+      equipment,
+    });
+  } catch (error) {
+    console.error("RETURN EQUIPMENT TO SERVICE ERROR:", error);
+    res.status(500).json({ error: "Could not return equipment to service" });
+  }
+});
+
 // ...other routes and middleware...
 
 // Place after app and middleware setup, near other manager routes
