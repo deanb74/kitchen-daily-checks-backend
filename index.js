@@ -906,58 +906,101 @@ app.post("/manager/venue-presets/:presetId/import", requireAuth, requireManager,
     const createdTasks = [];
 
     for (const area of preset.areas || []) {
-      const newArea = await prisma.area.create({
-        data: {
+      let newArea = await prisma.area.findFirst({
+        where: {
           siteId,
           name: area.name,
-          category: area.category || area.department || "general",
         },
       });
 
-      createdAreas.push(newArea);
-
-      for (const item of area.equipment || []) {
-        const equipment = await prisma.equipment.create({
+      if (!newArea) {
+        newArea = await prisma.area.create({
           data: {
             siteId,
-            areaId: newArea.id,
-            name: item.name,
-            type: item.type || null,
-            cleaningIntervalDays: item.cleaningIntervalDays || null,
-            maintenanceIntervalDays: item.maintenanceIntervalDays || null,
+            name: area.name,
+            category: area.category || area.department || "general",
           },
         });
 
-        createdEquipment.push(equipment);
+        createdAreas.push(newArea);
+      }
 
-        if (item.createTask !== false) {
-          const task = await prisma.task.create({
+      for (const item of area.equipment || []) {
+        let equipment = await prisma.equipment.findFirst({
+          where: {
+            siteId,
+            areaId: newArea.id,
+            name: item.name,
+          },
+        });
+
+        if (!equipment) {
+          equipment = await prisma.equipment.create({
             data: {
               siteId,
               areaId: newArea.id,
-              equipmentId: equipment.id,
-              name: item.taskName || `Check ${item.name}`,
-              department: area.department || area.category || "kitchen",
-              frequency: item.frequency || "daily",
+              name: item.name,
+              type: item.type || null,
+              cleaningIntervalDays: item.cleaningIntervalDays || null,
+              maintenanceIntervalDays: item.maintenanceIntervalDays || null,
             },
           });
 
-          createdTasks.push(task);
+          createdEquipment.push(equipment);
+        }
+
+        if (item.createTask !== false) {
+          const taskName = item.taskName || `Check ${item.name}`;
+
+          const existingTask = await prisma.task.findFirst({
+            where: {
+              siteId,
+              areaId: newArea.id,
+              equipmentId: equipment.id,
+              name: taskName,
+            },
+          });
+
+          if (!existingTask) {
+            const task = await prisma.task.create({
+              data: {
+                siteId,
+                areaId: newArea.id,
+                equipmentId: equipment.id,
+                name: taskName,
+                department: area.department || area.category || "kitchen",
+                frequency: item.frequency || "daily",
+              },
+            });
+
+            createdTasks.push(task);
+          }
         }
       }
     }
 
     for (const task of preset.tasks || []) {
-      const createdTask = await prisma.task.create({
-        data: {
+      const existingTask = await prisma.task.findFirst({
+        where: {
           siteId,
           name: task.name,
           department: task.department || "kitchen",
-          frequency: task.frequency || "daily",
+          equipmentId: null,
         },
       });
 
-      createdTasks.push(createdTask);
+      if (!existingTask) {
+        const createdTask = await prisma.task.create({
+          data: {
+            siteId,
+            name: task.name,
+            department: task.department || "kitchen",
+            frequency: task.frequency || "daily",
+          },
+        });
+
+        createdTasks.push(createdTask);
+      }
     }
 
     res.json({
