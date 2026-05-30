@@ -3202,17 +3202,41 @@ app.post("/manager/template-packs/:packId/import", requireAuth, requireManager, 
   }
 
   const created = [];
+  const skipped = [];
 
   for (const template of pack.templates) {
+    const existing = await prisma.taskTemplate.findFirst({
+      where: {
+        name: template.name,
+        department: template.department,
+        schedule: template.schedule || null,
+        venueType: template.venueType || null,
+      },
+    });
+
+    if (existing) {
+      skipped.push(existing);
+      continue;
+    }
+
     const newTemplate = await prisma.taskTemplate.create({
       data: {
         ...template,
       },
     });
+
     created.push(newTemplate);
   }
 
-  res.json({ success: true, created });
+  res.json({
+    success: true,
+    created,
+    skipped,
+    counts: {
+      created: created.length,
+      skipped: skipped.length,
+    },
+  });
 });
 
 app.get("/manager/equipment-status", requireAuth, requireManager, async (req, res) => {
