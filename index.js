@@ -3198,6 +3198,52 @@ const TEMPLATE_PACKS = [
     ],
   },
   {
+    id: "foh_closing",
+    name: "FoH Closing Pack",
+    templates: [
+      {
+        name: "Closing: Check tills are reconciled",
+        department: "front_of_house",
+        schedule: "closing",
+        dueHour: 23,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+      {
+        name: "Closing: Check cellar is secure",
+        department: "front_of_house",
+        schedule: "closing",
+        dueHour: 23,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+      {
+        name: "Closing: Check toilets are clean",
+        department: "front_of_house",
+        schedule: "closing",
+        dueHour: 23,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+      {
+        name: "Closing: Check public areas are secure",
+        department: "front_of_house",
+        schedule: "closing",
+        dueHour: 23,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+      {
+        name: "Closing: Check alarms are set",
+        department: "front_of_house",
+        schedule: "closing",
+        dueHour: 23,
+        dueMinute: 0,
+        autoCreate: true,
+      },
+    ],
+  },
+  {
     id: "kitchen_cleaning",
     name: "Kitchen SFBB Cleaning Pack",
     templates: [
