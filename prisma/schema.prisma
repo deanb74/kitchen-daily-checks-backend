@@ -28,21 +28,21 @@ model Site {
 }
 
 model User {
-  id        Int     @id @default(autoincrement())
-  email     String  @unique
-  password  String
-  role      String  @default("staff")
+  id          Int     @id @default(autoincrement())
+  email       String  @unique
+  password    String
+  role        String  @default("staff")
   firstName   String?
   lastName    String?
   displayName String?
   jobTitle    String?
-  pushToken String?
-  department String?
-  regionId   Int?
-  areaId     Int?
-  siteId    Int?
-  site      Site?   @relation(fields: [siteId], references: [id])
-  tasks     Task[]
+  pushToken   String?
+  department  String?
+  regionId    Int?
+  areaId      Int?
+  siteId      Int?
+  site        Site?   @relation(fields: [siteId], references: [id])
+  tasks       Task[]
 }
 
 model Task {
@@ -55,20 +55,20 @@ model Task {
   assignedUserId Int?
   assignedUser   User?     @relation(fields: [assignedUserId], references: [id])
 
-  areaId         Int?
-  equipmentId    Int?
-  siteId         Int?
-  site           Site?     @relation(fields: [siteId], references: [id])
+  areaId      Int?
+  equipmentId Int?
+  siteId      Int?
+  site        Site? @relation(fields: [siteId], references: [id])
 
-  department     String    @default("kitchen")
-  frequency      String    @default("daily")
+  department String @default("kitchen")
+  frequency  String @default("daily")
 
-  dueAt              DateTime?
-  escalationLevel    Int       @default(0)
-  lastEscalatedAt    DateTime?
-  completedById      Int?
-  completedByEmail   String?
-  complianceRecords  ComplianceRecord[]
+  dueAt             DateTime?
+  escalationLevel   Int                @default(0)
+  lastEscalatedAt   DateTime?
+  completedById     Int?
+  completedByEmail  String?
+  complianceRecords ComplianceRecord[]
 }
 
 model TemperatureLog {
@@ -81,6 +81,7 @@ model TemperatureLog {
   siteId       Int?
   site         Site?    @relation(fields: [siteId], references: [id])
   createdAt    DateTime @default(now())
+  custodyLinks FactLegacyTemperatureLogLink[] @relation("TemperatureLogCustodyLinks")
 }
 
 model ResetLog {
@@ -92,117 +93,427 @@ model ResetLog {
 }
 
 model TaskTemplate {
-  id          Int     @id @default(autoincrement())
-  name        String
-  department  String  @default("kitchen")
-  frequency   String  @default("daily")
-  areaId      Int?
-  equipmentId Int?
-  venueType   String?
-  autoCreate  Boolean @default(false)
-  schedule    String?
-  dueHour     Int?
-  dueMinute   Int?
-  safeMethodId            Int?
-  verificationRequired    Boolean @default(false)
-  managerSignoffRequired  Boolean @default(false)
-  correctiveActionPrompt  String?
+  id                     Int     @id @default(autoincrement())
+  name                   String
+  department             String  @default("kitchen")
+  frequency              String  @default("daily")
+  areaId                 Int?
+  equipmentId            Int?
+  venueType              String?
+  autoCreate             Boolean @default(false)
+  schedule               String?
+  dueHour                Int?
+  dueMinute              Int?
+  safeMethodId           Int?
+  verificationRequired   Boolean @default(false)
+  managerSignoffRequired Boolean @default(false)
+  correctiveActionPrompt String?
 
   instructions String?
   ppeRequired  String?
-  safeMethod              SafeMethod? @relation(fields: [safeMethodId], references: [id])
+  safeMethod   SafeMethod? @relation(fields: [safeMethodId], references: [id])
 }
 
 model Shift {
-  id             Int       @id @default(autoincrement())
-  userId         Int
-  siteId         Int?
-  department     String?
-  startedAt      DateTime  @default(now())
-  endedAt        DateTime?
-  handoverNotes  String?
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  siteId        Int?
+  department    String?
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  handoverNotes String?
 }
 
 model SafeMethod {
-  id            Int            @id @default(autoincrement())
-  title         String
-  category      String
-  description   String?
-  active        Boolean        @default(true)
-  createdAt     DateTime       @default(now())
+  id          Int      @id @default(autoincrement())
+  title       String
+  category    String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
   taskTemplates TaskTemplate[]
 }
 
 model ComplianceRecord {
-  id               Int      @id @default(autoincrement())
-  taskId           Int?
-  task             Task?    @relation(fields: [taskId], references: [id])
-  userId           Int
-  siteId           Int?
+  id     Int   @id @default(autoincrement())
+  taskId Int?
+  task   Task? @relation(fields: [taskId], references: [id])
+  userId Int
+  siteId Int?
 
   type             String
   value            String?
   notes            String?
   correctiveAction String?
-  verified         Boolean  @default(false)
+  verified         Boolean   @default(false)
   verifiedById     Int?
   verifiedAt       DateTime?
 
-  createdAt        DateTime @default(now())
+  photos CompliancePhoto[]
+
+  createdAt DateTime @default(now())
+}
+
+model StockItem {
+  id        Int      @id @default(autoincrement())
+  siteId    Int?
+  name      String
+  category  String?
+  unit      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StockMovement {
+  id          Int  @id @default(autoincrement())
+  stockItemId Int?
+  foodBatchId Int?
+
+  fromSiteId Int?
+  toSiteId   Int?
+
+  fromAreaId Int?
+  toAreaId   Int?
+
+  fromEquipmentId Int?
+  toEquipmentId   Int?
+
+  quantity     Float
+  unit         String?
+  movementType String // created, moved, transferred, used, wasted, corrected, borrowed, returned
+
+  status String  @default("completed") // requested, approved, in_transit, completed, cancelled
+  notes  String?
+
+  requestedById Int?
+  approvedById  Int?
+  completedById Int?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+}
+
+model CompliancePhoto {
+  id                 Int              @id @default(autoincrement())
+  complianceRecordId Int
+  complianceRecord   ComplianceRecord @relation(fields: [complianceRecordId], references: [id], onDelete: Cascade)
+
+  siteId Int?
+  userId Int?
+
+  fileUrl      String
+  thumbnailUrl String?
+
+  stage   String? // before, during, after
+  caption String?
+
+  createdAt DateTime @default(now())
 }
 
 model Area {
-  id        Int         @id @default(autoincrement())
-  siteId    Int
-  name      String
-  category  String?
-  active    Boolean     @default(true)
+  id       Int     @id @default(autoincrement())
+  siteId   Int
+  name     String
+  category String?
+  active   Boolean @default(true)
 
   site      Site        @relation(fields: [siteId], references: [id])
   equipment Equipment[]
 }
 
 model Equipment {
-  id      Int     @id @default(autoincrement())
-  siteId  Int
-  areaId  Int?
+  id     Int  @id @default(autoincrement())
+  siteId Int
+  areaId Int?
 
-  name    String
-  type    String?
-  active  Boolean @default(true)
+  name   String
+  type   String?
+  active Boolean @default(true)
 
-  faultReported      Boolean   @default(false)
-  faultNotes         String?
-  outOfService       Boolean   @default(false)
-  lastMaintenanceAt      DateTime?
-  lastCleanedAt          DateTime?
-  cleaningIntervalDays     Int?
-  maintenanceIntervalDays  Int?
-  nextCleaningDueAt        DateTime?
-  nextMaintenanceDueAt     DateTime?
+  faultReported           Boolean   @default(false)
+  faultNotes              String?
+  outOfService            Boolean   @default(false)
+  lastMaintenanceAt       DateTime?
+  lastCleanedAt           DateTime?
+  cleaningIntervalDays    Int?
+  maintenanceIntervalDays Int?
+  nextCleaningDueAt       DateTime?
+  nextMaintenanceDueAt    DateTime?
 
-  site    Site  @relation(fields: [siteId], references: [id])
-  area    Area? @relation(fields: [areaId], references: [id])
+  site Site  @relation(fields: [siteId], references: [id])
+  area Area? @relation(fields: [areaId], references: [id])
 }
 
 model SiteDocument {
-  id           Int      @id @default(autoincrement())
-  siteId       Int
+  id     Int @id @default(autoincrement())
+  siteId Int
 
   title        String
-  type         String?
+  type         String? // sfbb, cleaning, food_spec, invoice, supplier_list, equipment_manual
   language     String?
-
   fileUrl      String?
   thumbnailUrl String?
 
-  source       String?  // upload, photo, generated
-  status       String?  // stored, pending_ocr, imported
+  originalFileName String?
+  mimeType         String?
+  fileSize         Int?
+  fileExtension    String?
+  pageCount        Int?
+  imageWidth       Int?
+  imageHeight      Int?
 
-  createdById  Int?
+  checksum String?
 
-  createdAt    DateTime @default(now())
+  source String? // upload, photo, generated
+  status String? // uploaded, pending_ocr, parsed, imported, failed
 
-  site         Site @relation(fields: [siteId], references: [id])
+  extractedText String?
+  parsedJson    Json?
+
+  confidence    Float?
+  importSummary String?
+
+  createdById Int?
+
+  processingJobs DocumentProcessingJob[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id])
+}
+
+model DocumentProcessingJob {
+  id             Int  @id @default(autoincrement())
+  siteDocumentId Int
+  siteId         Int?
+
+  status  String @default("queued") // queued, processing, classified, parsed, awaiting_review, imported, failed
+  jobType String @default("parse") // ocr, classify, parse, import
+
+  attempts     Int     @default(0)
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  siteDocument SiteDocument @relation(fields: [siteDocumentId], references: [id], onDelete: Cascade)
+}
+
+model SupplierContact {
+  id            Int      @id @default(autoincrement())
+  siteId        Int?
+  name          String
+  company       String?
+  role          String?
+  category      String?
+  email         String?
+  phone         String?
+  preferred     Boolean  @default(false)
+  warranty      Boolean  @default(false)
+  equipmentType String?
+  areaName      String?
+  notes         String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ShelfLifeRule {
+  id       Int     @id @default(autoincrement())
+  siteId   Int?
+  name     String
+  foodType String?
+
+  freshShelfLifeHours   Int?
+  frozenShelfLifeHours  Int?
+  defrostShelfLifeHours Int?
+
+  storageType         String? // chilled, frozen, ambient, hot_hold
+  defrostInstructions String?
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FoodBatch {
+  id            Int  @id @default(autoincrement())
+  siteId        Int
+  parentBatchId Int?
+
+  name      String
+  batchCode String?
+
+  batchType          String  @default("fresh") // fresh, frozen, defrosting, defrosted
+  storageLocation    String? // fridge, freezer, dry_store, hot_hold
+  storageEquipmentId Int?
+  storageAreaId      Int?
+  storageNotes       String?
+
+  totalQuantity     Float?
+  remainingQuantity Float?
+  unit              String? // portions, kg, litres, trays
+  labelQuantity     Int?
+
+  madeAt  DateTime  @default(now())
+  useByAt DateTime?
+
+  originalShelfLifeHours         Int?
+  remainingShelfLifeHours        Int?
+  shelfLifeUsedBeforeFreezeHours Int?
+
+  frozenAt      DateTime?
+  frozenUseByAt DateTime?
+
+  defrostStartedAt      DateTime?
+  defrostUseByAt        DateTime?
+  defrostShelfLifeHours Int?
+  defrostInstructions   String?
+
+  status String  @default("active") // active, used, wasted, expired
+  notes  String?
+
+  createdById Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  labels      PrintedLabel[]
+  wasteAlerts WasteAlert[]
+  movements   FoodBatchMovement[]
+}
+
+model FoodBatchMovement {
+  id          Int @id @default(autoincrement())
+  foodBatchId Int
+  siteId      Int
+
+  fromStorageLocation String?
+  toStorageLocation   String?
+
+  fromEquipmentId Int?
+  toEquipmentId   Int?
+
+  fromAreaId Int?
+  toAreaId   Int?
+
+  quantity Float?
+  unit     String?
+
+  movementType String // created, moved, frozen, defrost_started, used, wasted, corrected
+  notes        String?
+
+  movedById Int?
+  movedAt   DateTime @default(now())
+
+  foodBatch FoodBatch @relation(fields: [foodBatchId], references: [id], onDelete: Cascade)
+}
+
+model LabelTemplate {
+  id            Int            @id @default(autoincrement())
+  siteId        Int?
+  name          String
+  type          String         @default("food_label") // food_label, allergen_label, prep_label, freezer_label
+  templateJson  Json?
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  printedLabels PrintedLabel[]
+}
+
+model PrintedLabel {
+  id              Int  @id @default(autoincrement())
+  siteId          Int
+  foodBatchId     Int?
+  labelTemplateId Int?
+
+  title           String
+  printedText     String?
+  quantityPrinted Int     @default(1)
+
+  storageLocation String? // fridge, freezer, dry_store, hot_hold
+  useByAt         DateTime?
+
+  printerName String?
+  printedById Int?
+
+  printedAt DateTime @default(now())
+
+  foodBatch     FoodBatch?     @relation(fields: [foodBatchId], references: [id])
+  labelTemplate LabelTemplate? @relation(fields: [labelTemplateId], references: [id])
+}
+
+model WasteAlert {
+  id          Int @id @default(autoincrement())
+  siteId      Int
+  foodBatchId Int
+
+  severity        String  @default("amber") // amber, red
+  status          String  @default("open") // open, acknowledged, resolved
+  message         String
+  suggestedAction String?
+
+  actionType   String? // use_today, put_on_specials, freeze, defrost, discard
+  actionStatus String? // suggested, accepted, declined, completed
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  foodBatch FoodBatch @relation(fields: [foodBatchId], references: [id], onDelete: Cascade)
+}
+
+model OperationalFact {
+  factId              String                       @id(map: "OperationalFact_pkey") @db.VarChar(255)
+  factType            String                       @db.VarChar(100)
+  factVersion         String                       @db.VarChar(32)
+  subjectType         String                       @db.VarChar(64)
+  subjectId           String                       @db.VarChar(255)
+  scopeType           String                       @db.VarChar(64)
+  scopeId             String                       @db.VarChar(255)
+  sourceKind          String                       @db.VarChar(32)
+  actorReference      String                       @db.VarChar(255)
+  provenanceReference String                       @db.VarChar(512)
+  observedAt          DateTime?
+  receivedAt          DateTime
+  payload             Json
+  relationships       Json
+  legacyLink          FactLegacyTemperatureLogLink? @relation("OperationalFactLegacyLink")
+  custodyReceipt      FactCustodyReceipt?          @relation("OperationalFactCustodyReceipt")
+
+  @@index([factType, factVersion], map: "OperationalFact_factType_factVersion_idx")
+  @@index([scopeType, scopeId, receivedAt], map: "OperationalFact_scopeType_scopeId_receivedAt_idx")
+  @@index([subjectType, subjectId, observedAt], map: "OperationalFact_subjectType_subjectId_observedAt_idx")
+  @@map("OperationalFact")
+}
+
+model FactLegacyTemperatureLogLink {
+  linkId                 String         @id(map: "FactLegacyTemperatureLogLink_pkey") @db.Uuid
+  factId                 String         @unique(map: "FactLegacyTemperatureLogLink_factId_key") @db.VarChar(255)
+  legacyTemperatureLogId Int
+  linkMode               String         @db.VarChar(64)
+  linkedAt               DateTime       @default(now())
+  fact                   OperationalFact @relation("OperationalFactLegacyLink", fields: [factId], references: [factId], onDelete: Restrict, onUpdate: Restrict)
+  legacyTemperatureLog   TemperatureLog  @relation("TemperatureLogCustodyLinks", fields: [legacyTemperatureLogId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([legacyTemperatureLogId], map: "FactLegacyTemperatureLogLink_legacyTemperatureLogId_idx")
+  @@map("FactLegacyTemperatureLogLink")
+}
+
+model FactCustodyReceipt {
+  receiptId            String          @id(map: "FactCustodyReceipt_pkey") @db.Uuid
+  factId               String          @unique(map: "FactCustodyReceipt_factId_key") @db.VarChar(255)
+  custodianReference   String          @db.VarChar(255)
+  recordedAt           DateTime        @default(now())
+  persistenceId        String          @unique(map: "FactCustodyReceipt_persistenceId_key") @db.Uuid
+  persistenceReference String          @unique(map: "FactCustodyReceipt_persistenceReference_key") @db.VarChar(255)
+  schemaVersion        String          @db.VarChar(32)
+  fact                 OperationalFact @relation("OperationalFactCustodyReceipt", fields: [factId], references: [factId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([custodianReference, recordedAt], map: "FactCustodyReceipt_custodianReference_recordedAt_idx")
+  @@map("FactCustodyReceipt")
 }
