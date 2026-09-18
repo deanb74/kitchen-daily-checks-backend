@@ -19,8 +19,12 @@ ALTER TABLE public."OperationalFact"
     ),
     ADD CONSTRAINT "OperationalFact_payload_shape_check" CHECK (
         jsonb_typeof("payload") = 'object'
-        AND jsonb_object_length("payload") = 3
         AND "payload" ?& ARRAY['measurementType', 'value', 'unit']
+        AND "payload" = jsonb_build_object(
+            'measurementType', "payload" -> 'measurementType',
+            'value', "payload" -> 'value',
+            'unit', "payload" -> 'unit'
+        )
         AND "payload" ->> 'measurementType' = 'temperature'
         AND jsonb_typeof("payload" -> 'value') = 'number'
         AND "payload" ->> 'unit' = 'celsius'
