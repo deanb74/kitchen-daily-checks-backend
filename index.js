@@ -6,9 +6,29 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import PDFDocument from "pdfkit";
 import { Resend } from "resend";
+import { auditLog } from "./core/auditService.js";
+import { runAutomation } from "./core/automationEngine.js";
+import { onEvent } from "./core/eventBus.js";
+import { evaluateRules } from "./core/rulesEngine.js";
+import { createTemperatureCustodyRouteDependencies, registerTemperatureCustodyRoutes } from "./services/temperatureCustodyRoute.js";
 
 const app = express();
 const prisma = new PrismaClient();
+
+onEvent("document.uploaded", async (payload) => {
+  await auditLog(prisma, {
+    siteId: payload.siteId,
+    userId: payload.userId,
+    action: "document.uploaded",
+    entityType: "SiteDocument",
+    entityId: payload.documentId,
+    message: "Document uploaded to venue.",
+    metadata: payload,
+  });
+
+  evaluateRules("document.uploaded", payload);
+  await runAutomation("document.uploaded", payload);
+});
 
 app.use(cors());
 app.use(express.json());
@@ -225,15 +245,22 @@ app.get("/health", (_req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-const SECRET = process.env.JWT_SECRET || "supersecret";
-const INTERNAL_RESET_SECRET =
-  process.env.INTERNAL_RESET_SECRET || "change-me-reset-secret";
-const INTERNAL_REPORT_SECRET =
-  process.env.INTERNAL_REPORT_SECRET || "change-me-report-secret";
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const REPORT_FROM = process.env.REPORT_FROM || "";
-const REPORT_TO = process.env.REPORT_TO || "";
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+
+function requireEnvironment(name) {
+  const value = process.env[name];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const SECRET = requireEnvironment("JWT_SECRET");
+const INTERNAL_RESET_SECRET = requireEnvironment("INTERNAL_RESET_SECRET");
+const INTERNAL_REPORT_SECRET = requireEnvironment("INTERNAL_REPORT_SECRET");
+const RESEND_API_KEY = requireEnvironment("RESEND_API_KEY");
+const REPORT_FROM = requireEnvironment("REPORT_FROM");
+const REPORT_TO = requireEnvironment("REPORT_TO");
+const resend = new Resend(RESEND_API_KEY);
 
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -322,6 +349,78 @@ function applyDepartmentScope(req, where = {}) {
   return where;
 }
 
+function classifyComplianceNote(note = "") {
+  const text = note.toLowerCase();
+
+  const redKeywords = [
+    "fire escape",
+    "blocked exit",
+    "fire door",
+    "no hot water",
+    "pest",
+    "rats",
+    "mice",
+    "wasp",
+    "gas leak",
+    "smell gas",
+    "alarm fault",
+    "fridge not working",
+    "freezer not working",
+    "inoperative",
+    "unsafe",
+
+    // Refrigeration / Cellar Cooling
+    "not maintaining temperature",
+    "temperature out of range",
+    "temperature high",
+    "too warm",
+    "warm",
+    "not cooling",
+    "beer cellar",
+    "cellar cooling",
+    "cellar cooler",
+    "beer cooler",
+    "cooling fault",
+    "chiller",
+    "chiller fault",
+    "cooler",
+    "cooler fault",
+    "fridge warm",
+    "freezer warm",
+    "cold room warm",
+    "walk in fridge warm",
+    "walk-in fridge warm",
+  ];
+
+  const amberKeywords = [
+    "broken",
+    "damaged",
+    "blocked",
+    "leaking",
+    "low stock",
+    "fault",
+    "repair",
+    "not working",
+
+    // Refrigeration warnings
+    "intermittent",
+    "not cooling properly",
+    "running warm",
+    "temperature drift",
+    "cooling issue",
+  ];
+
+  if (redKeywords.some((word) => text.includes(word))) {
+    return "red";
+  }
+
+  if (amberKeywords.some((word) => text.includes(word))) {
+    return "amber";
+  }
+
+  return "green";
+}
+
 async function sendExpoPushNotifications(messages) {
   try {
     const response = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -340,6 +439,11 @@ async function sendExpoPushNotifications(messages) {
     console.error("PUSH SEND ERROR:", error);
   }
 }
+
+const temperatureCustodyRouteDependencies = createTemperatureCustodyRouteDependencies({
+  prisma,
+  sendExpoPushNotifications,
+});
 
 app.get("/", (_req, res) => {
   res.send("Kitchen Daily Checks API is running");
@@ -506,8 +610,11 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
     const existingTask = await prisma.task.findFirst({
       where: {
         id,
-        assignedUserId: req.currentUser.id,
         siteId: req.currentUser.siteId || null,
+        OR: [
+          { assignedUserId: req.currentUser.id },
+          { assignedUserId: null },
+        ],
       },
     });
 
@@ -534,12 +641,14 @@ app.post("/tasks/:id/complete", requireAuth, attachCurrentUser, async (req, res)
     });
 
     if (note) {
+      const ragStatus = classifyComplianceNote(note);
       await prisma.complianceRecord.create({
         data: {
           taskId: Number(req.params.id),
           userId: req.currentUser.id,
           siteId: completedTask.siteId || req.currentUser.siteId || null,
-          type: "task_completion_note",
+          type: ragStatus === "green" ? "task_completion_note" : "urgent_check_note",
+          value: ragStatus,
           notes: note,
         },
       });
@@ -742,103 +851,10 @@ app.post("/shift/end", requireAuth, attachCurrentUser, async (req, res) => {
   }
 });
 
-app.get("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
-  const logs = await prisma.temperatureLog.findMany({
-    where: {
-      siteId: req.currentUser.siteId,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json(logs);
-});
-
-app.post("/temperatures", requireAuth, attachCurrentUser, async (req, res) => {
-  const { fridge, value, type } = req.body;
-
-  if (!fridge || value === undefined || !type) {
-    return res.status(400).json({ error: "fridge, value and type are required" });
-  }
-
-  const temp = Number(value);
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-
-  const existingRecentLog = await prisma.temperatureLog.findFirst({
-    where: {
-      siteId: req.currentUser.siteId,
-      fridge,
-      type,
-      value: temp,
-      createdAt: {
-        gte: fiveMinutesAgo,
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  if (existingRecentLog) {
-    return res.json({
-      success: true,
-      duplicate: true,
-      entry: existingRecentLog,
-    });
-  }
-
-  let status = "green";
-
-  if (type === "fridge") {
-    if (temp < 0 || temp > 8) status = "red";
-    else if (temp < 2 || temp > 5) status = "amber";
-  }
-
-  if (type === "freezer") {
-    if (temp > -18) status = "red";
-    else if (temp < -21) status = "amber";
-  }
-
-  const entry = await prisma.temperatureLog.create({
-    data: {
-      fridge,
-      value: temp,
-      type,
-      status,
-      siteId: req.currentUser.siteId,
-    },
-  });
-
-  if (status === "red") {
-    const managers = await prisma.user.findMany({
-      where: {
-        role: "manager",
-        siteId: req.currentUser.siteId,
-        pushToken: { not: null },
-      },
-      select: {
-        pushToken: true,
-      },
-    });
-
-    const messages = managers
-      .filter((m) => m.pushToken)
-      .map((m) => ({
-        to: m.pushToken,
-        sound: "default",
-        title: "Red temperature alert",
-        body: `${fridge} (${type}) logged ${temp}°C`,
-        data: {
-          screen: "manager",
-          fridge,
-          type,
-          value: temp,
-          status,
-        },
-      }));
-
-    if (messages.length > 0) {
-      await sendExpoPushNotifications(messages);
-    }
-  }
-
-  res.json(entry);
+registerTemperatureCustodyRoutes(app, {
+  ...temperatureCustodyRouteDependencies,
+  requireAuth,
+  attachCurrentUser,
 });
 
 app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => {
@@ -898,6 +914,80 @@ app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => 
   });
 });
 
+app.get("/checks", requireAuth, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    const type = String(req.query.type || "").toLowerCase();
+
+    if (!["opening", "closing"].includes(type)) {
+      return res.status(400).json({ error: "type must be opening or closing" });
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    const requestedDepartment = req.query.department
+      ? String(req.query.department)
+      : null;
+
+    const department =
+      user.role === "manager"
+        ? requestedDepartment
+        : user.department;
+
+    const where = {
+      taskDate: today,
+      siteId: user.siteId,
+      OR: [
+        { assignedUserId: null },
+        { assignedUserId: user.id },
+      ],
+      name: {
+        startsWith: `${type.charAt(0).toUpperCase()}${type.slice(1)}:`,
+      },
+    };
+
+    if (department) {
+      where.department = department;
+    }
+
+    const checks = await prisma.task.findMany({
+      where,
+      include: {
+        complianceRecords: {
+          where: {
+            type: {
+              in: ["task_completion_note", "urgent_check_note"],
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 1,
+        },
+      },
+      orderBy: { id: "asc" },
+    });
+
+    res.json({
+      type,
+      department: department || "all",
+      date: today,
+      count: checks.length,
+      checks,
+    });
+  } catch (error) {
+    console.error("LOAD CHECKS ERROR:", error);
+    res.status(500).json({ error: "Could not load checks" });
+  }
+});
+
 app.get("/staff/corrective-actions", requireAuth, attachCurrentUser, async (req, res) => {
   try {
     const records = await prisma.complianceRecord.findMany({
@@ -952,6 +1042,208 @@ app.get("/manager/sites", requireAuth, requireManager, async (_req, res) => {
   res.json(sites);
 });
 
+app.get("/manager/sites/:siteId/health-score", requireAuth, requireManager, async (req, res) => {
+  const siteId = Number(req.params.siteId);
+
+  if (!siteId) {
+    return res.status(400).json({ error: "Missing siteId" });
+  }
+
+  const [
+    openRisks,
+    unresolvedRedRisks,
+    recentComplianceRecords,
+    recentPhotos,
+    equipmentFaults,
+    documents,
+  ] = await Promise.all([
+    prisma.complianceRecord.count({
+      where: {
+        siteId,
+        verified: false,
+      },
+    }),
+
+    prisma.complianceRecord.count({
+      where: {
+        siteId,
+        verified: false,
+        type: { contains: "red", mode: "insensitive" },
+      },
+    }),
+
+    prisma.complianceRecord.count({
+      where: {
+        siteId,
+        createdAt: {
+          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        },
+      },
+    }),
+
+    prisma.compliancePhoto.count({
+      where: {
+        siteId,
+        createdAt: {
+          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        },
+      },
+    }),
+
+    prisma.equipment.count({
+      where: {
+        siteId,
+        OR: [
+          { faultReported: true },
+          { outOfService: true },
+        ],
+      },
+    }),
+
+    prisma.siteDocument.count({
+      where: {
+        siteId,
+      },
+    }),
+  ]);
+
+  const complianceScore = Math.max(0, 100 - openRisks * 5 - unresolvedRedRisks * 15);
+  const maintenanceScore = Math.max(0, 100 - equipmentFaults * 10);
+  const evidenceScore = Math.min(100, recentPhotos * 10);
+  const documentationScore = Math.min(100, documents * 10);
+  const activityScore = Math.min(100, recentComplianceRecords * 5);
+
+  const overall = Math.round(
+    complianceScore * 0.35 +
+    maintenanceScore * 0.25 +
+    evidenceScore * 0.15 +
+    documentationScore * 0.15 +
+    activityScore * 0.10
+  );
+
+  res.json({
+    overall,
+    scores: {
+      compliance: Math.round(complianceScore),
+      maintenance: Math.round(maintenanceScore),
+      evidence: Math.round(evidenceScore),
+      documentation: Math.round(documentationScore),
+      activity: Math.round(activityScore),
+    },
+    signals: {
+      openRisks,
+      unresolvedRedRisks,
+      recentComplianceRecords,
+      recentPhotos,
+      equipmentFaults,
+      documents,
+    },
+  });
+});
+
+app.post("/manager/site-documents", requireAuth, requireManager, async (req, res) => {
+  try {
+    const {
+      siteId,
+      title,
+      type,
+      language,
+      fileUrl,
+      thumbnailUrl,
+      source,
+    } = req.body;
+
+    if (!siteId || !title) {
+      return res.status(400).json({ error: "Missing siteId or title" });
+    }
+
+    const document = await prisma.siteDocument.create({
+      data: {
+        siteId: Number(siteId),
+        title,
+        type,
+        language,
+        fileUrl,
+        thumbnailUrl,
+        source: source || "upload",
+        status: "uploaded",
+        createdById: req.currentUser?.id,
+      },
+    });
+
+    res.json(document);
+  } catch (error) {
+    console.error("CREATE SITE DOCUMENT ERROR:", error);
+    res.status(500).json({ error: "Could not create site document" });
+  }
+});
+
+app.get("/manager/site-documents", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    if (!siteId) {
+      return res.status(400).json({ error: "Missing siteId" });
+    }
+
+    const documents = await prisma.siteDocument.findMany({
+      where: { siteId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(documents);
+  } catch (error) {
+    console.error("LOAD SITE DOCUMENTS ERROR:", error);
+    res.status(500).json({ error: "Could not load site documents" });
+  }
+});
+
+app.post("/manager/site-documents/:id/parse-preview", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+    const id = Number(req.params.id);
+
+    if (!siteId || !id) {
+      return res.status(400).json({ error: "Missing siteId or document id" });
+    }
+
+    const existing = await prisma.siteDocument.findFirst({
+      where: {
+        id,
+        siteId,
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Site document not found" });
+    }
+
+    const parsedJson = {
+      title: existing.title,
+      type: existing.type || null,
+      language: existing.language || null,
+      source: existing.source || null,
+      fileUrl: existing.fileUrl || null,
+      previewOnly: true,
+      message: "Parse preview generated without OCR",
+    };
+
+    const updated = await prisma.siteDocument.update({
+      where: { id: existing.id },
+      data: {
+        status: "parsed",
+        parsedJson,
+        importSummary: "Preview generated (no OCR yet)",
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("PARSE PREVIEW ERROR:", error);
+    res.status(500).json({ error: "Could not create parse preview" });
+  }
+});
+
 app.get("/manager/shifts", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
 
@@ -969,12 +1261,119 @@ app.get("/manager/compliance-records", requireAuth, requireManager, async (req, 
   const siteId = getManagerSiteId(req);
 
   const records = await prisma.complianceRecord.findMany({
-    where: { siteId },
+    where: {
+      siteId,
+      type: {
+        notIn: ["call_log", "email_log"],
+      },
+    },
+    include: {
+      task: true,
+      photos: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
 
-  res.json(records);
+  const taskIds = [
+    ...new Set(records.map((record) => record.taskId).filter(Boolean)),
+  ];
+
+  const actionLogs = await prisma.complianceRecord.findMany({
+    where: {
+      siteId,
+      taskId: {
+        in: taskIds,
+      },
+      type: {
+        in: ["call_log", "email_log"],
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  const recordsWithActionLogs = records.map((record) => ({
+    ...record,
+    actionLogs: actionLogs.filter((log) => log.taskId === record.taskId),
+  }));
+
+  res.json(recordsWithActionLogs);
+});
+
+app.get("/manager/supplier-contacts", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const contacts = await prisma.supplierContact.findMany({
+      where: {
+        OR: [
+          { siteId },
+          { siteId: null },
+        ],
+        active: true,
+      },
+      orderBy: [
+        { preferred: "desc" },
+        { company: "asc" },
+        { name: "asc" },
+      ],
+    });
+
+    res.json(contacts);
+  } catch (error) {
+    console.error("LOAD SUPPLIER CONTACTS ERROR:", error);
+    res.status(500).json({ error: "Could not load supplier contacts" });
+  }
+});
+
+app.post("/manager/supplier-contacts", requireAuth, requireManager, async (req, res) => {
+  try {
+    const siteId = getManagerSiteId(req);
+
+    const {
+      name,
+      company,
+      role,
+      category,
+      email,
+      phone,
+      preferred,
+      warranty,
+      equipmentType,
+      areaName,
+      notes,
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Contact name is required" });
+    }
+
+    const contact = await prisma.supplierContact.create({
+      data: {
+        siteId,
+        name,
+        company: company || null,
+        role: role || null,
+        category: category || null,
+        email: email || null,
+        phone: phone || null,
+        preferred: Boolean(preferred),
+        warranty: Boolean(warranty),
+        equipmentType: equipmentType || null,
+        areaName: areaName || null,
+        notes: notes || null,
+      },
+    });
+
+    res.json(contact);
+  } catch (error) {
+    console.error("CREATE SUPPLIER CONTACT ERROR:", error);
+    res.status(500).json({ error: "Could not create supplier contact" });
+  }
 });
 
 // Venue setup presets routes
@@ -1208,6 +1607,181 @@ app.post("/manager/compliance-records/:id/verify", requireAuth, requireManager, 
   res.json(record);
 });
 
+app.post("/manager/compliance-records/:id/status", requireAuth, requireManager, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { status, note } = req.body;
+
+    if (!["actioned", "timetabled", "resolved"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    const existing = await prisma.complianceRecord.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Compliance record not found" });
+    }
+
+    let value = existing.value || "red";
+    let verified = existing.verified || false;
+    let verifiedAt = existing.verifiedAt || null;
+    let verifiedById = existing.verifiedById || null;
+
+    if (status === "actioned") {
+      value = "amber";
+    }
+
+    if (status === "timetabled") {
+      value = "yellow";
+    }
+
+    if (status === "resolved") {
+      value = "green";
+      verified = true;
+      verifiedAt = new Date();
+      verifiedById = req.user.userId;
+    }
+
+    const prefix = status.toUpperCase();
+    const correctiveAction = note
+      ? `${prefix}: ${note}`
+      : `${prefix}: Updated by manager`;
+
+    const updated = await prisma.complianceRecord.update({
+      where: { id },
+      data: {
+        value,
+        verified,
+        verifiedAt,
+        verifiedById,
+        correctiveAction,
+      },
+    });
+
+    res.json({
+      success: true,
+      status,
+      record: updated,
+    });
+  } catch (error) {
+    console.error("UPDATE COMPLIANCE RECORD STATUS ERROR:", error);
+    res.status(500).json({ error: "Could not update compliance record status" });
+  }
+});
+
+app.post(
+  "/manager/compliance-records/:id/call",
+  requireAuth,
+  requireManager,
+  async (req, res) => {
+    try {
+      const recordId = Number(req.params.id);
+
+      const record = await prisma.complianceRecord.findUnique({
+        where: { id: recordId },
+      });
+
+      if (!record) {
+        return res.status(404).json({ error: "Record not found" });
+      }
+
+      const log = await prisma.complianceRecord.create({
+        data: {
+          taskId: record.taskId,
+          userId: req.user.userId,
+          siteId: record.siteId,
+          type: "call_log",
+          value: "amber",
+          notes: req.body.notes || "Call initiated",
+          correctiveAction: req.body.contactName || null,
+        },
+      });
+
+      const caller = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+      });
+
+      const callerName =
+        caller?.displayName ||
+        [caller?.firstName, caller?.lastName].filter(Boolean).join(" ") ||
+        caller?.email ||
+        `User ${req.user.userId}`;
+
+      const actionText = `CALL INITIATED: ${
+        req.body.contactName || "Contact"
+      } at ${new Date().toLocaleString("en-GB")} by ${callerName}`;
+
+      await prisma.complianceRecord.update({
+        where: { id: recordId },
+        data: {
+          value: "amber",
+          correctiveAction: actionText,
+        },
+      });
+
+      res.json(log);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to log call" });
+    }
+  }
+);
+
+app.post("/manager/compliance-records/:id/email", requireAuth, requireManager, async (req, res) => {
+  try {
+    const recordId = Number(req.params.id);
+
+    const record = await prisma.complianceRecord.findUnique({
+      where: { id: recordId },
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: "Record not found" });
+    }
+
+    const caller = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+    });
+
+    const callerName =
+      caller?.displayName ||
+      [caller?.firstName, caller?.lastName].filter(Boolean).join(" ") ||
+      caller?.email ||
+      `User ${req.user.userId}`;
+
+    const actionText = `EMAIL INITIATED: ${
+      req.body.contactName || "Contact"
+    } at ${new Date().toLocaleString("en-GB")} by ${callerName}`;
+
+    const log = await prisma.complianceRecord.create({
+      data: {
+        taskId: record.taskId,
+        userId: req.user.userId,
+        siteId: record.siteId,
+        type: "email_log",
+        value: "amber",
+        notes: req.body.notes || "Email initiated",
+        correctiveAction: req.body.contactName || null,
+      },
+    });
+
+    await prisma.complianceRecord.update({
+      where: { id: recordId },
+      data: {
+        value: "amber",
+        correctiveAction: actionText,
+      },
+    });
+
+    res.json(log);
+  } catch (error) {
+    console.error("EMAIL LOG ERROR:", error);
+    res.status(500).json({ error: "Failed to log email" });
+  }
+});
+
 app.post("/manager/compliance-records/:id/corrective-action", requireAuth, requireManager, async (req, res) => {
   try {
     const siteId = getManagerSiteId(req);
@@ -1254,6 +1828,48 @@ app.post("/manager/compliance-records/:id/corrective-action", requireAuth, requi
     console.error("CORRECTIVE ACTION ERROR:", error);
     res.status(500).json({ error: "Could not request corrective action" });
   }
+});
+
+app.post("/manager/compliance-records/:id/photos", requireAuth, requireManager, async (req, res) => {
+  const complianceRecordId = Number(req.params.id);
+  const { fileUrl, thumbnailUrl, stage, caption } = req.body;
+
+  if (!complianceRecordId || !fileUrl) {
+    return res.status(400).json({ error: "Missing complianceRecordId or fileUrl" });
+  }
+
+  const record = await prisma.complianceRecord.findUnique({
+    where: { id: complianceRecordId },
+  });
+
+  if (!record) {
+    return res.status(404).json({ error: "Compliance record not found" });
+  }
+
+  const photo = await prisma.compliancePhoto.create({
+    data: {
+      complianceRecordId,
+      siteId: record.siteId,
+      userId: req.user?.id,
+      fileUrl,
+      thumbnailUrl,
+      stage,
+      caption,
+    },
+  });
+
+  res.json(photo);
+});
+
+app.get("/manager/compliance-records/:id/photos", requireAuth, requireManager, async (req, res) => {
+  const complianceRecordId = Number(req.params.id);
+
+  const photos = await prisma.compliancePhoto.findMany({
+    where: { complianceRecordId },
+    orderBy: { createdAt: "asc" },
+  });
+
+  res.json(photos);
 });
 
 app.get("/manager/areas", requireAuth, requireManager, async (req, res) => {
@@ -1846,17 +2462,33 @@ app.post("/manager/tasks", requireAuth, requireManager, async (req, res) => {
 
 app.post("/manager/tasks/reset", requireAuth, requireManager, async (req, res) => {
   const siteId = getManagerSiteId(req);
-  await prisma.task.updateMany({
+  const today = new Date().toISOString().slice(0, 10);
+
+  const resetResult = await prisma.task.updateMany({
     where: {
       siteId,
     },
     data: {
+      taskDate: today,
       completed: false,
       completedAt: null,
+      completedById: null,
+      completedByEmail: null,
     },
   });
 
-  res.json({ success: true });
+  await prisma.resetLog.create({
+    data: {
+      siteId,
+      resetCount: resetResult.count,
+    },
+  });
+
+  res.json({
+    success: true,
+    taskDate: today,
+    resetCount: resetResult.count,
+  });
 });
 
 app.get("/manager/task-templates", requireAuth, requireManager, async (_req, res) => {
@@ -2558,8 +3190,11 @@ app.post("/internal/reset-daily-tasks", async (req, res) => {
           siteId: site.id,
         },
         data: {
+          taskDate: now.toISOString().slice(0, 10),
           completed: false,
           completedAt: null,
+          completedById: null,
+          completedByEmail: null,
         },
       });
 
@@ -2590,16 +3225,15 @@ app.post("/internal/reset-daily-tasks", async (req, res) => {
 });
 
 function shouldGenerateTemplate(template, now = new Date()) {
-  const hour = now.getHours();
   const day = now.getDay();
   const date = now.getDate();
 
   switch (template.schedule) {
     case "opening":
-      return hour >= 5 && hour < 8;
+      return true;
 
     case "closing":
-      return hour >= 16 && hour < 23;
+      return true;
 
     case "weekly_monday":
       return day === 1;
@@ -2659,6 +3293,52 @@ app.post("/internal/generate-template-tasks", async (req, res) => {
 
     for (const template of templates) {
       if (!shouldGenerateTemplate(template)) {
+        continue;
+      }
+
+
+      if (template.schedule === "opening" || template.schedule === "closing") {
+        const sites = await prisma.site.findMany({
+          orderBy: { id: "asc" },
+        });
+
+        for (const site of sites) {
+          const existing = await prisma.task.findFirst({
+            where: {
+              templateId: template.id,
+              taskDate: today,
+              siteId: site.id,
+              assignedUserId: null,
+            },
+          });
+
+          if (existing) {
+            skipped.push({
+              templateId: template.id,
+              siteId: site.id,
+              reason: "Site-wide check already exists",
+            });
+            continue;
+          }
+
+          const dueAt = buildDueAt(today, template.dueHour, template.dueMinute);
+
+          const task = await prisma.task.create({
+            data: {
+              name: template.name,
+              department: template.department,
+              frequency: template.frequency,
+              templateId: template.id,
+              taskDate: today,
+              assignedUserId: null,
+              siteId: site.id,
+              dueAt,
+            },
+          });
+
+          created.push(task);
+        }
+
         continue;
       }
 
@@ -2861,10 +3541,7 @@ app.post("/internal/check-overdue-tasks", async (req, res) => {
 
 app.post("/internal/email-daily-report", async (req, res) => {
   const authHeader = req.headers.authorization;
-  console.log("=== REPORT AUTH DEBUG START ===");
-  console.log("REPORT AUTH HEADER:", authHeader);
-  console.log("EXPECTED INTERNAL_REPORT_SECRET:", INTERNAL_REPORT_SECRET);
-  console.log("=== REPORT AUTH DEBUG END ===");
+
 
   if (!authHeader || authHeader !== `Bearer ${INTERNAL_REPORT_SECRET}`) {
     return res.status(401).json({ error: "Unauthorized" });
