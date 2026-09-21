@@ -324,6 +324,48 @@ model SupplierContact {
   updatedAt     DateTime @updatedAt
 }
 
+model Recipe {
+  id        Int     @id @default(autoincrement())
+  siteId    Int
+  name      String
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions RecipeVersion[]
+
+  @@unique([siteId, name])
+}
+
+model RecipeVersion {
+  id       Int @id @default(autoincrement())
+  recipeId Int
+  version  Int
+
+  status           String @default("draft") // draft, approved, retired
+  ingredients      Json
+  allergens        Json
+  methodSteps      Json
+  criticalControls Json
+
+  cookingInstructions   String?
+  coolingInstructions   String?
+  storageInstructions   String?
+  defrostInstructions   String?
+  reheatingInstructions String?
+
+  shelfLifeRuleId Int?
+  approvedById    Int?
+  approvedAt      DateTime?
+  effectiveAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  recipe  Recipe      @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  batches FoodBatch[]
+
+  @@unique([recipeId, version])
+}
+
 model ShelfLifeRule {
   id       Int     @id @default(autoincrement())
   siteId   Int?
@@ -346,6 +388,8 @@ model FoodBatch {
   id            Int  @id @default(autoincrement())
   siteId        Int
   parentBatchId Int?
+  recipeVersionId Int?
+  publicReference String? @unique
 
   name      String
   batchCode String?
@@ -386,6 +430,7 @@ model FoodBatch {
   labels      PrintedLabel[]
   wasteAlerts WasteAlert[]
   movements   FoodBatchMovement[]
+  recipeVersion RecipeVersion? @relation(fields: [recipeVersionId], references: [id], onDelete: Restrict)
 }
 
 model FoodBatchMovement {
