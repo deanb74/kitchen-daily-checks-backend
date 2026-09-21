@@ -42,6 +42,45 @@ function publicBatch(record) {
   };
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function publicBatchHtml(batch) {
+  const ingredients = Array.isArray(batch.ingredients)
+    ? batch.ingredients.map((item) => typeof item === "string" ? item : item?.name).filter(Boolean)
+    : [];
+  const allergens = Array.isArray(batch.allergens) ? batch.allergens.filter((item) => typeof item === "string") : [];
+  const useBy = batch.useByAt ? new Date(batch.useByAt) : null;
+  const useByText = useBy && Number.isFinite(useBy.getTime())
+    ? new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/London" }).format(useBy)
+    : "Not specified";
+  const status = batch.status === "recalled"
+    ? "RECALLED — DO NOT USE"
+    : batch.status === "available" ? "Available" : "Batch not available";
+  const statusClass = batch.status === "available" ? "available" : "recalled";
+  const list = (items, emptyText) => items.length
+    ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+    : `<p>${escapeHtml(emptyText)}</p>`;
+
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>${escapeHtml(batch.foodName)} · Talk.Get OS</title>
+<style>body{margin:0;background:#f4f1e9;color:#18231d;font:16px system-ui,-apple-system,sans-serif}.page{max-width:680px;margin:auto;padding:24px}.brand{font-weight:800;letter-spacing:.04em}.card{margin-top:18px;background:#fff;border:1px solid #d9ddd9;border-radius:18px;padding:22px;box-shadow:0 8px 30px #17332314}h1{font-size:32px;margin:.25em 0}.status{display:inline-block;padding:7px 11px;border-radius:999px;font-weight:800}.available{background:#dff3e5;color:#145c2c}.recalled{background:#7e1111;color:white}h2{font-size:15px;margin:24px 0 6px;text-transform:uppercase;letter-spacing:.06em}ul{margin:6px 0;padding-left:22px}.foot{margin-top:24px;color:#59635d;font-size:13px}</style></head>
+<body><main class="page"><div class="brand">Talk.Get OS</div><section class="card"><span class="status ${statusClass}">${escapeHtml(status)}</span>
+<h1>${escapeHtml(batch.foodName)}</h1><h2>Use by</h2><p>${escapeHtml(useByText)}</p>
+<h2>Allergens</h2>${list(allergens, "No allergens recorded.")}
+<h2>Ingredients</h2>${list(ingredients, "No ingredients recorded.")}
+<h2>Storage</h2><p>${escapeHtml(batch.storageInstructions || "No storage instructions recorded.")}</p>
+<p class="foot">This page shows the approved public information attached to this batch. If the label or food appears unsafe, do not use it and speak to a member of staff.</p>
+</section></main></body></html>`;
+}
+
 export function createRecipeBatchRouteHandlers({
   prisma,
   randomBytes = nodeRandomBytes,
@@ -163,7 +202,21 @@ export function createRecipeBatchRouteHandlers({
     return res.json({ success: true, batch: publicBatch(record) });
   }
 
-  return { createApprovedRecipe, createBatch, resolveStaffBatch, resolvePublicBatch };
+  async function renderPublicBatch(req, res) {
+    const reference = req.params.publicReference;
+    res.set("Cache-Control", "no-store");
+    if (!PUBLIC_REFERENCE.test(reference)) return res.status(404).type("html").send(publicBatchHtml({ foodName: "Batch not found", status: "unavailable" }));
+    const record = await prisma.foodBatch.findUnique({
+      where: { publicReference: reference },
+      include: { recipeVersion: { include: { recipe: true } } },
+    });
+    if (!record?.recipeVersion || record.recipeVersion.status !== "approved") {
+      return res.status(404).type("html").send(publicBatchHtml({ foodName: "Batch not found", status: "unavailable" }));
+    }
+    return res.status(200).type("html").send(publicBatchHtml(publicBatch(record)));
+  }
+
+  return { createApprovedRecipe, createBatch, resolveStaffBatch, resolvePublicBatch, renderPublicBatch };
 }
 
 export function registerRecipeBatchRoutes(app, dependencies) {
@@ -172,5 +225,6 @@ export function registerRecipeBatchRoutes(app, dependencies) {
   app.post("/food-batches", dependencies.requireAuth, dependencies.attachCurrentUser, handlers.createBatch);
   app.get("/food-batches/scan/:publicReference", dependencies.requireAuth, dependencies.attachCurrentUser, handlers.resolveStaffBatch);
   app.get("/public/food-batches/:publicReference", handlers.resolvePublicBatch);
+  app.get("/b/:publicReference", handlers.renderPublicBatch);
   return handlers;
 }

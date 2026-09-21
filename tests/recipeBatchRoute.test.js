@@ -8,6 +8,9 @@ function response() {
     body: undefined,
     status(code) { this.statusCode = code; return this; },
     json(body) { this.body = body; return this; },
+    type(value) { this.contentType = value; return this; },
+    set(name, value) { this.headers = { ...this.headers, [name]: value }; return this; },
+    send(body) { this.body = body; return this; },
   };
 }
 
@@ -74,6 +77,33 @@ test("staff resolution includes method custody while public resolution filters i
   assert.equal(publicRes.body.batch.foodName, "Beef lasagne");
   assert.equal("storageLocation" in publicRes.body.batch, false);
   assert.equal("methodSteps" in publicRes.body.batch, false);
+});
+
+test("renders a safe public batch landing page without operational fields", async () => {
+  const { prisma, state } = dependencies();
+  state.createdBatch = { id: 22, siteId: 7, publicReference: "opaqueRef123", name: "Beef lasagne", useByAt: new Date("2026-09-23T09:30:00.000Z"), status: "active", storageLocation: "Fridge 1 · Shelf 4" };
+  const handlers = createRecipeBatchRouteHandlers({ prisma });
+  const res = response();
+  await handlers.renderPublicBatch({ params: { publicReference: "opaqueRef123" } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.contentType, "html");
+  assert.equal(res.headers["Cache-Control"], "no-store");
+  assert.match(res.body, /Beef lasagne/);
+  assert.match(res.body, /GLU/);
+  assert.equal(res.body.includes("Fridge 1"), false);
+  assert.equal(res.body.includes("Cook using the approved method"), false);
+  assert.equal(res.body.includes("siteId"), false);
+});
+
+test("renders a closed not-found page for unknown or malformed public references", async () => {
+  const { prisma } = dependencies();
+  const handlers = createRecipeBatchRouteHandlers({ prisma });
+  const malformed = response();
+  await handlers.renderPublicBatch({ params: { publicReference: "bad" } }, malformed);
+  assert.equal(malformed.statusCode, 404);
+  assert.match(malformed.body, /Batch not found/);
+  assert.match(malformed.body, /Batch not available/);
+  assert.equal(malformed.headers["Cache-Control"], "no-store");
 });
 
 test("rejects an unapproved or cross-site recipe version", async () => {

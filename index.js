@@ -863,6 +863,7 @@ registerRecipeBatchRoutes(app, {
   requireAuth,
   requireManager,
   attachCurrentUser,
+  publicQrBaseUrl: process.env.PUBLIC_QR_BASE_URL || "https://talkget.app/b",
 });
 
 app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => {
