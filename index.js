@@ -11,6 +11,7 @@ import { runAutomation } from "./core/automationEngine.js";
 import { onEvent } from "./core/eventBus.js";
 import { evaluateRules } from "./core/rulesEngine.js";
 import { createTemperatureCustodyRouteDependencies, registerTemperatureCustodyRoutes } from "./services/temperatureCustodyRoute.js";
+import { registerRecipeBatchRoutes } from "./services/recipeBatchRoute.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -855,6 +856,14 @@ registerTemperatureCustodyRoutes(app, {
   ...temperatureCustodyRouteDependencies,
   requireAuth,
   attachCurrentUser,
+});
+
+registerRecipeBatchRoutes(app, {
+  prisma,
+  requireAuth,
+  requireManager,
+  attachCurrentUser,
+  publicQrBaseUrl: process.env.PUBLIC_QR_BASE_URL || "https://talkget.app/b",
 });
 
 app.get("/staff/dashboard", requireAuth, attachCurrentUser, async (req, res) => {
